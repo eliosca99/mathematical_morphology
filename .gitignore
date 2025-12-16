@@ -1,0 +1,15 @@
+*.o 
+*.out 
+*.exe
+
+# Ignore build directories
+/build/
+/dist/
+
+# Ignore temporary files
+*.tmp
+*.log
+
+# Ignore IDE specific files
+.vscode/
+.DS_Store
