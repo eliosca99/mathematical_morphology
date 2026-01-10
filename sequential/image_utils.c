@@ -12,13 +12,7 @@ Image* createImage(int width, int height, char *mn) {
     img->width = width;
     img->height = height;
 
-    img->data = (unsigned char*)calloc(width * height, sizeof(unsigned char));
-
-    if (!img->data) {
-        printf("Impossible to allocate memory for the pixels");
-        free(img);
-        return NULL;
-    }
+    img->data = NULL;
 
     printf("Image allocated\n");
     return img;
@@ -58,6 +52,13 @@ Image* loadImage(const char* filename) {
         } else {
             Image * image = createImage(width, height, mn);
             int val, res;
+            unsigned char * data = (unsigned char*)malloc(width * height);
+            if(data == NULL) {
+                printf("Impossible to allocata memory for the pixels of the image\n");
+                free(image);
+                fclose(file);
+                return NULL;
+            }
             for (int i = 0; i < width*height; i++) {
                 res = fscanf(file, "%d", &val);
                 if (res != 1) {
@@ -72,10 +73,11 @@ Image* loadImage(const char* filename) {
                         freeImage(image);
                         return NULL;
                     } else {
-                        image->data[i] = (unsigned char) val;
+                        data[i] = (unsigned char) val;
                     }
                 }
             }
+            image->data = data;
             fclose(file);
             printf("File closed\n");
             return image;
@@ -123,7 +125,6 @@ int saveImage(const char* filename, Image* image) {
         for (int j = 0; j < w; j++) {
             if(data[(i*w)+j] == 1) {
                 raw[pos++] = '1';
-                printf("HEllo\n");
             } else {
                 raw[pos++] = '0';
             }
