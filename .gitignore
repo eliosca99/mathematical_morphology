@@ -13,3 +13,6 @@
 # Ignore IDE specific files
 .vscode/
 .DS_Store
+
+/input_images/
+/output_images/
