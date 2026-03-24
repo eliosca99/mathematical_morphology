@@ -23,5 +23,9 @@ ByteImage* dilationByteImage(ByteImage* image, StructuringElementWithOffsets* SE
 ByteImage* openingByteImage(ByteImage* image, StructuringElementWithOffsets* SE);
 ByteImage* closingByteImage(ByteImage* image, StructuringElementWithOffsets* SE);
 
+Uint64Image* erosionUint64Image(Uint64Image* image, StructuringElementWithOffsets* SE);
+Uint64Image* dilationUint64Image(Uint64Image* image, StructuringElementWithOffsets* SE);
+Uint64Image* openingUint64Image(Uint64Image* image, StructuringElementWithOffsets* SE);
+Uint64Image* closingUint64Image(Uint64Image* image, StructuringElementWithOffsets* SE);
 
 #endif

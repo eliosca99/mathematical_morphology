@@ -4,6 +4,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
+#include <stdint.h>
 
 typedef struct {
     char magicNumber[3];
@@ -20,6 +21,15 @@ typedef struct {
     unsigned char *data; // ogni char (1 byte) contiene ora 8 pixel e non solo 1
 } ByteImage;
 
+typedef struct {
+    char magicNumber[3];
+    int width;
+    int height;
+    int rowStride;
+    uint64_t *data; // uint64_t occupa in memoria 64 bit, quindi 64 pixel
+    
+} Uint64Image;
+
 Image* createImage(int width, int height, char *mn);
 void freeImage(Image* image);
 Image* loadImage(const char* filename);
@@ -28,7 +38,12 @@ int saveImage(const char* filename, Image* image);
 ByteImage* createByteImage(int width, int height, char *mn);
 void freeByteImage(ByteImage* byteImage);
 ByteImage* loadByteImage(const char* filename);
-int saveByteImage(const char* finemane, ByteImage* byteImage);
+int saveByteImage(const char* filename, ByteImage* byteImage);
+
+Uint64Image* createUint64Image(int width, int height, char *mn);
+void freeUint64Image(Uint64Image* uint64Image);
+Uint64Image* loadUint64Image(const char* filename);
+int saveUint64Image(const char* filename, Uint64Image* uint64Image);
 
 typedef struct {
     int width;

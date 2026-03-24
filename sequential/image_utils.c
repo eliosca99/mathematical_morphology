@@ -243,6 +243,132 @@ int saveByteImage(const char* filename, ByteImage* byteImage) {
     return 0;
 } // saveByteImage
 
+Uint64Image* createUint64Image(int width, int height, char *mn) {
+    Uint64Image* img = (Uint64Image*)malloc(sizeof(Uint64Image));
+    if (!img) {
+        fprintf(stderr, "Errore: impossibile allocare memoria per l'immagine\n");
+        return NULL;
+    }
+
+    strcpy(img->magicNumber, mn);
+    img->width = width;
+    img->height = height;
+    img->rowStride = (width + 63) / 64; // 64 pixel per uint64_t
+
+    img->data = NULL;
+
+    return img;
+} // createUint64Image
+
+void freeUint64Image(Uint64Image* uint64Image) {
+    if (uint64Image) {
+        if (uint64Image->data) {
+            free(uint64Image->data);
+        }
+        free(uint64Image);
+    }
+} // freeUint64Image
+
+Uint64Image* loadUint64Image(const char* filename) {
+    FILE* file = fopen(filename, "r");
+    if (file == NULL) {
+        fprintf(stderr, "Errore: impossibile aprire il file %s\n", filename);
+        perror("");
+        return NULL;
+    } else {
+        int width, height, res;
+        char mn[3];
+        int r = fscanf(file, "%s", mn);
+        if (mn[0] != 'P' || (mn[1] != '1' && mn[1] != '2' && mn[1] != '3' && mn[1] != '4' && mn[1] != '5' && mn[1] != '6')) {
+            fprintf(stderr, "Errore: tipo di file non compatibile\n");
+            fclose(file);
+            return NULL;
+        }
+        if (fscanf(file, "%d %d", &width, &height) != 2) {
+            fprintf(stderr, "Errore: impossibile leggere le dimensioni\n");
+            fclose(file);
+            return NULL;
+        } else {
+            Uint64Image* image = createUint64Image(width, height, mn);
+            int val, res;
+            int rowStride = image->rowStride;
+            uint64_t* data = (uint64_t*)malloc(rowStride * height * sizeof(uint64_t));
+            if (data == NULL) {
+                fprintf(stderr, "Errore: impossibile allocare memoria per i pixel dell'immagine\n");
+                free(image);
+                fclose(file);
+                return NULL;
+            }
+            memset(data, 0, rowStride * height * sizeof(uint64_t)); // Inizializza a 0
+            for (int i = 0; i < height; i++) {
+                for (int j = 0; j < width; j++) {
+                    res = fscanf(file, "%d", &val);
+                    if (res != 1) {
+                        fprintf(stderr, "Errore: file terminato prima dei pixel attesi\n");
+                        fclose(file);
+                        freeUint64Image(image);
+                        return NULL;
+                    } else {
+                        if (val != 0 && val != 1) {
+                            fprintf(stderr, "Errore: valore anomalo trovato\n");
+                            fclose(file);
+                            freeUint64Image(image);
+                            return NULL;
+                        } else {
+                            if (val == 1) {
+                                data[i * rowStride + j / 64] |= ((uint64_t)1 << (63 - (j % 64)));
+                            }
+                        }
+                    }
+                }
+            }
+            image->data = data;
+            fclose(file);
+            return image;
+        }
+    }
+} // loadUint64Image
+
+int saveUint64Image(const char* filename, Uint64Image* uint64Image) {
+    char* mn = uint64Image->magicNumber;
+    int w = uint64Image->width;
+    int h = uint64Image->height;
+    int rowStride = uint64Image->rowStride;
+    uint64_t* data = uint64Image->data;
+    int header_len = snprintf(NULL, 0, "%s\n%d %d\n", mn, w, h);
+    char* header = (char*)malloc(header_len + 1);
+    sprintf(header, "%s\n%d %d\n", mn, w, h);
+
+    FILE* fptr;
+    fptr = fopen(filename, "w");
+    if (fptr == NULL) {
+        fprintf(stderr, "Errore: impossibile aprire il file %s per la scrittura\n", filename);
+        return 1;
+    }
+    fprintf(fptr, "%s", header);
+    char* raw = (char*)malloc(w * 2 + 1);
+
+    for (int i = 0; i < h; i++) {
+        int pos = 0;
+        for (int j = 0; j < w; j++) {
+            uint64_t byte = data[i * rowStride + j / 64];
+            int bit = (byte >> (63 - (j % 64))) & 1;
+            if (bit == 1) {
+                raw[pos++] = '1';
+            } else {
+                raw[pos++] = '0';
+            }
+            raw[pos++] = ' ';
+        }
+        raw[pos++] = '\n';
+        fwrite(raw, 1, pos, fptr);
+    }
+    free(header);
+    free(raw);
+    fclose(fptr);
+    return 0;
+} // saveUint64Image
+
 StructuringElement* createSE(int width, int height, int originX, int originY, unsigned char* data) {
     StructuringElement* se = (StructuringElement*)malloc(sizeof(StructuringElement));
     if (!se) {

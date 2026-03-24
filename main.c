@@ -88,6 +88,7 @@ typedef Image* (*BaseOp)(Image*, StructuringElement*);
 typedef Image* (*OffsetOp)(Image*, StructuringElementWithOffsets*);
 typedef Image* (*SeparableOp)(Image*, int, int);
 typedef ByteImage* (*ByteOffsetOp)(ByteImage*, StructuringElementWithOffsets*);
+typedef Uint64Image* (*Uint64OffsetOp)(Uint64Image*, StructuringElementWithOffsets*);
 
 typedef struct {
     const char* name;
@@ -95,6 +96,7 @@ typedef struct {
     OffsetOp offset;
     SeparableOp separable;
     ByteOffsetOp byteOffset;
+    Uint64OffsetOp uint64Offset;
     const char* outputFile;
 } OperationSpec;
 
@@ -169,6 +171,28 @@ static double benchmarkByteOffset(ByteImage* image, StructuringElementWithOffset
         }
         total += timeDiffMs(start, end);
         freeByteImage(out);
+    }
+
+    return total / runs;
+}
+
+static double benchmarkUint64Offset(Uint64Image* image, StructuringElementWithOffsets* se, Uint64OffsetOp op, int runs) {
+    struct timespec start, end;
+    double total = 0.0;
+
+    if (!image || !op) {
+        return -1.0;
+    }
+
+    for (int r = 0; r < runs; r++) {
+        clock_gettime(CLOCK_MONOTONIC, &start);
+        Uint64Image* out = op(image, se);
+        clock_gettime(CLOCK_MONOTONIC, &end);
+        if (!out) {
+            return -1.0;
+        }
+        total += timeDiffMs(start, end);
+        freeUint64Image(out);
     }
 
     return total / runs;
@@ -280,11 +304,16 @@ int main(int argc, char* argv[]) {
         fprintf(stderr, "Avviso: impossibile caricare ByteImage, benchmark byte disabilitato\n");
     }
 
+    Uint64Image* uint64Image = loadUint64Image(inputPath);
+    if (!uint64Image) {
+        fprintf(stderr, "Avviso: impossibile caricare Uint64Image, benchmark uint64 disabilitato\n");
+    }
+
     OperationSpec ops[] = {
-        {"erosion",  erosion,  erosionWithOffsets,  erosionSeparable,  erosionByteImage,  "erosion.pbm"},
-        {"dilation", dilation, dilationWithOffsets, dilationSeparable, dilationByteImage, "dilation.pbm"},
-        {"opening",  opening,  openingWithOffsets,  openingSeparable,  openingByteImage,  "opening.pbm"},
-        {"closing",  closing,  closingWithOffsets,  closingSeparable,  closingByteImage,  "closing.pbm"}
+        {"erosion",  erosion,  erosionWithOffsets,  erosionSeparable,  erosionByteImage,  erosionUint64Image,  "erosion.pbm"},
+        {"dilation", dilation, dilationWithOffsets, dilationSeparable, dilationByteImage, dilationUint64Image, "dilation.pbm"},
+        {"opening",  opening,  openingWithOffsets,  openingSeparable,  openingByteImage,  openingUint64Image,  "opening.pbm"},
+        {"closing",  closing,  closingWithOffsets,  closingSeparable,  closingByteImage,  closingUint64Image,  "closing.pbm"}
     };
     int numOps = (int)(sizeof(ops) / sizeof(ops[0]));
 
@@ -292,6 +321,7 @@ int main(int argc, char* argv[]) {
     int csvWritten = snprintf(csvPath, sizeof(csvPath), "%s/benchmark.csv", outputDir);
     if (csvWritten < 0 || csvWritten >= (int)sizeof(csvPath)) {
         fprintf(stderr, "Errore: path CSV troppo lungo\n");
+        freeUint64Image(uint64Image);
         freeByteImage(byteImage);
         freeImage(image);
         return 1;
@@ -300,12 +330,13 @@ int main(int argc, char* argv[]) {
     FILE* csv = fopen(csvPath, "w");
     if (!csv) {
         fprintf(stderr, "Errore: impossibile aprire il CSV %s\n", csvPath);
+        freeUint64Image(uint64Image);
         freeByteImage(byteImage);
         freeImage(image);
         return 1;
     }
 
-    fprintf(csv, "se_shape,se_size,se_radius,operation,base_ms,offset_ms,separable_ms,byte_ms,speedup_offset,speedup_separable,speedup_byte,runs,input\n");
+    fprintf(csv, "se_shape,se_size,se_radius,operation,base_ms,offset_ms,separable_ms,byte_ms,uint64_ms,speedup_offset,speedup_separable,speedup_byte,speedup_uint64,runs,input\n");
 
     printf("Input: %s (%dx%d)\n", inputPath, image->width, image->height);
     printf("Run mediati: %d\n", numRuns);
@@ -336,6 +367,7 @@ int main(int argc, char* argv[]) {
                 freeSE(se);
                 freeSEWithOffsets(seOff);
                 fclose(csv);
+                    freeUint64Image(uint64Image);
                 freeByteImage(byteImage);
                 freeImage(image);
                 return 1;
@@ -355,12 +387,14 @@ int main(int argc, char* argv[]) {
                     separableMs = benchmarkSeparable(image, seSize, ops[i].separable, numRuns);
                 }
                 double byteMs = benchmarkByteOffset(byteImage, seOff, ops[i].byteOffset, numRuns);
+                double uint64Ms = benchmarkUint64Offset(uint64Image, seOff, ops[i].uint64Offset, numRuns);
 
                 if (baseMs < 0 || offsetMs < 0 || (shape == SE_SHAPE_BOX && separableMs < 0)) {
                     fprintf(stderr, "Errore: benchmark fallito per %s (%s, size=%d)\n", ops[i].name, shapeName, seSize);
                     freeSE(se);
                     freeSEWithOffsets(seOff);
                     fclose(csv);
+                    freeUint64Image(uint64Image);
                     freeByteImage(byteImage);
                     freeImage(image);
                     return 1;
@@ -369,44 +403,53 @@ int main(int argc, char* argv[]) {
                 double speedupOffset = baseMs / offsetMs;
                 double speedupSeparable = (separableMs > 0.0) ? (baseMs / separableMs) : -1.0;
                 double speedupByte = (byteMs > 0.0) ? (baseMs / byteMs) : -1.0;
+                double speedupUint64 = (uint64Ms > 0.0) ? (baseMs / uint64Ms) : -1.0;
 
                 char separableMsField[32];
                 char speedupSeparableField[32];
                 char byteMsField[32];
                 char speedupByteField[32];
+                char uint64MsField[32];
+                char speedupUint64Field[32];
                 formatMetric(separableMs, separableMsField, sizeof(separableMsField));
                 formatMetric(speedupSeparable, speedupSeparableField, sizeof(speedupSeparableField));
                 formatMetric(byteMs, byteMsField, sizeof(byteMsField));
                 formatMetric(speedupByte, speedupByteField, sizeof(speedupByteField));
+                formatMetric(uint64Ms, uint64MsField, sizeof(uint64MsField));
+                formatMetric(speedupUint64, speedupUint64Field, sizeof(speedupUint64Field));
 
-                fprintf(csv, "%s,%d,%d,%s,%.6f,%.6f,%s,%s,%.6f,%s,%s,%d,%s\n",
-                        shapeName,
-                        seSize,
-                        seRadius,
+                fprintf(csv, "%s,%d,%d,%s,%.6f,%.6f,%s,%s,%s,%.6f,%s,%s,%s,%d,%s\n",
+                    shapeName,
+                    seSize,
+                    seRadius,
+                    ops[i].name,
+                    baseMs,
+                    offsetMs,
+                    separableMsField,
+                    byteMsField,
+                    uint64MsField,
+                    speedupOffset,
+                    speedupSeparableField,
+                    speedupByteField,
+                    speedupUint64Field,
+                    numRuns,
+                    inputPath);
+
+                if (shape == SE_SHAPE_BOX) {
+                    printf("%s -> base: %.3f ms | offset: %.3f ms | separabile: %s ms | byte: %s ms | uint64: %s ms\n",
                         ops[i].name,
                         baseMs,
                         offsetMs,
                         separableMsField,
                         byteMsField,
-                        speedupOffset,
-                        speedupSeparableField,
-                        speedupByteField,
-                        numRuns,
-                        inputPath);
-
-                if (shape == SE_SHAPE_BOX) {
-                    printf("%s -> base: %.3f ms | offset: %.3f ms | separabile: %s ms | byte: %s ms\n",
-                           ops[i].name,
-                           baseMs,
-                           offsetMs,
-                           separableMsField,
-                           byteMsField);
+                        uint64MsField);
                 } else {
-                    printf("%s -> base: %.3f ms | offset: %.3f ms | separabile: NA | byte: %s ms\n",
-                           ops[i].name,
-                           baseMs,
-                           offsetMs,
-                           byteMsField);
+                    printf("%s -> base: %.3f ms | offset: %.3f ms | separabile: NA | byte: %s ms | uint64: %s ms\n",
+                        ops[i].name,
+                        baseMs,
+                        offsetMs,
+                        byteMsField,
+                        uint64MsField);
                 }
             }
 
@@ -420,6 +463,7 @@ int main(int argc, char* argv[]) {
     StructuringElement* imageSe = createBoxSE(imageSaveSeSize);
     if (!imageSe) {
         fprintf(stderr, "Errore durante la creazione dell'SE per il salvataggio immagini\n");
+        freeUint64Image(uint64Image);
         freeByteImage(byteImage);
         freeImage(image);
         return 1;
@@ -428,6 +472,7 @@ int main(int argc, char* argv[]) {
     if (saveOperationImages(image, imageSe, outputDir, ops, numOps) != 0) {
         fprintf(stderr, "Errore durante il salvataggio delle immagini di output\n");
         freeSE(imageSe);
+        freeUint64Image(uint64Image);
         freeByteImage(byteImage);
         freeImage(image);
         return 1;
@@ -438,6 +483,7 @@ int main(int argc, char* argv[]) {
     printf("CSV salvato in: %s\n", csvPath);
     printf("Immagini salvate in: %s/{erosion,dilation,opening,closing}.pbm\n", outputDir);
 
+    freeUint64Image(uint64Image);
     freeByteImage(byteImage);
     freeImage(image);
     return 0;

@@ -1,4 +1,5 @@
 #include "morpho.h"
+#include <stdint.h>
 
 Image* erosion(Image* image, StructuringElement* SE) {
     int h = image->height;
@@ -449,14 +450,14 @@ ByteImage* erosionByteImage(ByteImage* image, StructuringElementWithOffsets* SE)
 
     int h = image->height;
     int w = image->width;
-    int rowStride = image->rowStride;
+    int rs = image->rowStride;
 
     ByteImage* imageEroded = createByteImage(w, h, image->magicNumber);
     if (imageEroded == NULL) {
         fprintf(stderr, "Errore: impossibile allocare la nuova immagine\n");
         return NULL;
     }
-    unsigned char* dataEroded = (unsigned char*)calloc(rowStride * h, sizeof(unsigned char));
+    unsigned char* dataEroded = (unsigned char*)calloc(rs * h, sizeof(unsigned char));
     if (!dataEroded) {
         fprintf(stderr, "Errore: impossibile allocare memoria per i dati della nuova immagine\n");
         free(imageEroded);
@@ -467,7 +468,7 @@ ByteImage* erosionByteImage(ByteImage* image, StructuringElementWithOffsets* SE)
     int bottom = SE->height - SE->originY - 1;
     int left = SE->originX;
     int right = SE->width - SE->originX - 1;
-    int rs = image->rowStride;
+   
 
     // calcolo gli offset linearizzati. in questo caso un offset è formato da dy, il numero di righe in verticale, 
     // e dx, con quest'ultimo si aggiunge ByteOffset e bitOffset, che indica in quale byte andare e per quanti bit spostarsi
@@ -713,3 +714,251 @@ ByteImage* closingByteImage(ByteImage* image, StructuringElementWithOffsets* SE)
     return result;
 }
 
+Uint64Image* erosionUint64Image(Uint64Image* image, StructuringElementWithOffsets* SE) {
+    int w = image->width;
+    int h = image->height;
+    int rs = image->rowStride;
+
+    // Calcolo il padding necessario per evitare if nel ciclo interno
+    int topPad = SE->originY;
+    int bottomPad = SE->height - SE->originY - 1;
+    int leftPadInt64 = (SE->originX + 63) / 64 + 1;  // +1 per il wordB
+    int rightPadInt64 = ((SE->width - SE->originX - 1) + 63) / 64 + 1;
+
+    int paddedH = h + topPad + bottomPad;
+    int paddedRs = rs + leftPadInt64 + rightPadInt64;
+
+    // Alloco l'immagine padded (inizializzata a 0 = padding virtuale)
+    uint64_t* dataPadded = (uint64_t*)calloc(paddedRs * paddedH, sizeof(uint64_t));
+    if (!dataPadded) {
+        fprintf(stderr, "Errore: impossibile allocare memoria per il padding\n");
+        return NULL;
+    }
+
+    // Copio l'immagine originale nel centro del buffer padded
+    for (int i = 0; i < h; i++) {
+        const uint64_t* src = image->data + i * rs;
+        uint64_t* dst = dataPadded + (i + topPad) * paddedRs + leftPadInt64;
+        memcpy(dst, src, rs * sizeof(uint64_t));
+    }
+
+    uint64_t* dataEroded = (uint64_t*)calloc(rs * h, sizeof(uint64_t));
+    if (!dataEroded) {
+        fprintf(stderr, "Errore: impossibile allocare memoria per i dati della nuova immagine\n");
+        free(dataPadded);
+        return NULL;
+    }
+
+    Uint64Image* imageEroded = createUint64Image(w, h, image->magicNumber);
+    if (!imageEroded) {
+        fprintf(stderr, "Errore: impossibile allocare memoria per la nuova immagine\n");
+        free(dataEroded);
+        free(dataPadded);
+        return NULL;
+    }
+
+    int n = SE->numOffsets;
+    int *dyRows = (int*)malloc(n * sizeof(int));
+    int *dxInt = (int*)malloc(n * sizeof(int));
+    int *dxBits = (int*)malloc(n * sizeof(int));
+
+    if (!(dyRows && dxInt && dxBits)) {
+        fprintf(stderr, "Impossibile allocare memoria per gli offset\n");
+        free(dyRows);
+        free(dxInt);
+        free(dxBits);
+        free(dataEroded);
+        free(dataPadded);
+        free(imageEroded);
+        return NULL;
+    }
+
+    for (int k = 0; k < n; k++) {
+        int dy = SE->offsets[k].dy;
+        int dx = SE->offsets[k].dx;
+
+        dyRows[k] = paddedRs * dy;
+
+        if (dx >= 0) {
+            dxInt[k] = dx / 64;
+            dxBits[k] = dx % 64;
+        } else {
+            dxInt[k] = (dx - 63) / 64;
+            dxBits[k] = dx - dxInt[k] * 64;
+        }
+    }
+
+    for (int i = 0; i < h; i++) {
+        int srcRowBase = (i + topPad) * paddedRs + leftPadInt64;
+        int dstRowBase = i * rs;
+
+        for (int j = 0; j < rs; j++) {
+            uint64_t acc = UINT64_MAX;
+
+            for (int k = 0; k < n; k++) {
+                int srcIdx = srcRowBase + dyRows[k] + j + dxInt[k];
+                uint64_t wordA = dataPadded[srcIdx];
+                uint64_t wordB = dataPadded[srcIdx + 1];
+
+                int shift = dxBits[k];
+                // Mask per azzerare il contributo di wordB quando shift == 0
+                uint64_t mask = -(uint64_t)(shift != 0);
+                uint64_t val = (wordA << shift) | ((wordB >> ((64 - shift) & 63)) & mask);
+
+                acc &= val;
+                if (acc == 0) break;
+            }
+            dataEroded[dstRowBase + j] = acc;
+        }
+    }
+
+    free(dyRows);
+    free(dxInt);
+    free(dxBits);
+    free(dataPadded);
+    imageEroded->data = dataEroded;
+
+    return imageEroded;
+} // erosionUint64Image
+
+Uint64Image* dilationUint64Image(Uint64Image* image, StructuringElementWithOffsets* SE) {
+    int w = image->width;
+    int h = image->height;
+    int rs = image->rowStride;
+
+    // Calcolo il padding per il buffer di output (dove "spargere" i pixel)
+    int topPad = SE->originY;
+    int bottomPad = SE->height - SE->originY - 1;
+    int leftPadInt64 = (SE->originX + 63) / 64 + 1;
+    int rightPadInt64 = ((SE->width - SE->originX - 1) + 63) / 64 + 1;
+
+    int paddedH = h + topPad + bottomPad;
+    int paddedRs = rs + leftPadInt64 + rightPadInt64;
+
+    // Buffer di output con padding (inizializzato a 0)
+    uint64_t* dataDilated = (uint64_t*)calloc(paddedRs * paddedH, sizeof(uint64_t));
+    if (!dataDilated) {
+        fprintf(stderr, "Errore: impossibile allocare memoria per il buffer di output\n");
+        return NULL;
+    }
+
+    // Buffer di input con padding
+    uint64_t* dataPadded = (uint64_t*)calloc(paddedRs * paddedH, sizeof(uint64_t));
+    if (!dataPadded) {
+        fprintf(stderr, "Errore: impossibile allocare memoria per il padding\n");
+        free(dataDilated);
+        return NULL;
+    }
+
+    // Copio l'immagine originale nel centro del buffer padded
+    for (int i = 0; i < h; i++) {
+        const uint64_t* src = image->data + i * rs;
+        uint64_t* dst = dataPadded + (i + topPad) * paddedRs + leftPadInt64;
+        memcpy(dst, src, rs * sizeof(uint64_t));
+    }
+
+    Uint64Image* imageDilated = createUint64Image(w, h, image->magicNumber);
+    if (!imageDilated) {
+        fprintf(stderr, "Errore: impossibile allocare memoria per la nuova immagine\n");
+        free(dataDilated);
+        free(dataPadded);
+        return NULL;
+    }
+
+    int n = SE->numOffsets;
+    int* dyRows = (int*)malloc(n * sizeof(int));
+    int* dxInt = (int*)malloc(n * sizeof(int));
+    int* dxBits = (int*)malloc(n * sizeof(int));
+
+    if (!(dyRows && dxInt && dxBits)) {
+        fprintf(stderr, "Impossibile allocare memoria per gli offset\n");
+        free(dyRows);
+        free(dxInt);
+        free(dxBits);
+        free(dataDilated);
+        free(dataPadded);
+        freeUint64Image(imageDilated);
+        return NULL;
+    }
+
+    for (int k = 0; k < n; k++) {
+        int dy = SE->offsets[k].dy;
+        int dx = SE->offsets[k].dx;
+
+        dyRows[k] = paddedRs * dy;
+
+        if (dx >= 0) {
+            dxInt[k] = dx / 64;
+            dxBits[k] = dx % 64;
+        } else {
+            dxInt[k] = (dx - 63) / 64;
+            dxBits[k] = dx - dxInt[k] * 64;
+        }
+    }
+
+    // Per ogni word sorgente, "spargo" i bit nelle posizioni dell'SE
+    for (int i = 0; i < h; i++) {
+        int srcRowBase = (i + topPad) * paddedRs + leftPadInt64;
+
+        for (int j = 0; j < rs; j++) {
+            uint64_t srcWord = dataPadded[srcRowBase + j];
+            if (srcWord == 0)
+                continue;
+
+            int dstIdx = srcRowBase + j;
+
+            for (int k = 0; k < n; k++) {
+                int shift = dxBits[k];
+                int targetIdx = dstIdx + dyRows[k] + dxInt[k];
+
+                // Spargo i bit: shift a destra per il word corrente, shift a sinistra per il successivo
+                dataDilated[targetIdx] |= srcWord >> shift;
+
+                // Contributo al word successivo (solo se shift > 0)
+                uint64_t mask = -(uint64_t)(shift != 0);
+                dataDilated[targetIdx + 1] |= (srcWord << ((64 - shift) & 63)) & mask;
+            }
+        }
+    }
+
+    free(dyRows);
+    free(dxInt);
+    free(dxBits);
+    free(dataPadded);
+
+    // Estraggo la regione centrale (senza padding)
+    uint64_t* dataOutput = (uint64_t*)calloc(rs * h, sizeof(uint64_t));
+    if (!dataOutput) {
+        fprintf(stderr, "Errore: impossibile allocare memoria per l'output\n");
+        free(dataDilated);
+        freeUint64Image(imageDilated);
+        return NULL;
+    }
+
+    for (int i = 0; i < h; i++) {
+        const uint64_t* src = dataDilated + (i + topPad) * paddedRs + leftPadInt64;
+        uint64_t* dst = dataOutput + i * rs;
+        memcpy(dst, src, rs * sizeof(uint64_t));
+    }
+
+    free(dataDilated);
+    imageDilated->data = dataOutput;
+
+    return imageDilated;
+} // dilationUint64Image
+
+Uint64Image* openingUint64Image(Uint64Image* image, StructuringElementWithOffsets* SE) {
+    Uint64Image* eroded = erosionUint64Image(image, SE);
+    if (eroded == NULL) return NULL;
+    Uint64Image* result = dilationUint64Image(eroded, SE);
+    freeUint64Image(eroded);
+    return result;
+} // openingUint64Image
+
+Uint64Image* closingUint64Image(Uint64Image* image, StructuringElementWithOffsets* SE) {
+    Uint64Image* dilated = dilationUint64Image(image, SE);
+    if (dilated == NULL) return NULL;
+    Uint64Image* result = erosionUint64Image(dilated, SE);
+    freeUint64Image(dilated);
+    return result;
+} // closingUint64Image
