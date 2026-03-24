@@ -1,291 +1,5 @@
 #include "morpho.h"
 
-StructuringElement* createSE(int width, int height, int originX, int originY, unsigned char* data) {
-    StructuringElement* se = (StructuringElement*)malloc(sizeof(StructuringElement));
-    if (!se) {
-        fprintf(stderr, "Errore: impossibile allocare memoria per l'elemento strutturante\n");
-        return NULL;
-    }
-
-    se->width = width;
-    se->height = height;
-    se->originX = originX;
-    se->originY = originY;
-
-    se->data = (unsigned char*)malloc(width * height * sizeof(unsigned char));
-    if (!se->data) {
-        fprintf(stderr, "Errore: impossibile allocare memoria per i dati dell'elemento strutturante\n");
-        free(se);
-        return NULL;
-    }
-
-    memcpy(se->data, data, width * height * sizeof(unsigned char));
-
-    return se;
-}// createSE
-
-StructuringElement* createBoxSE(int size) {
-    unsigned char* data = (unsigned char*)malloc(size * size * sizeof(unsigned char));
-    if (!data) {
-        fprintf(stderr, "Errore: impossibile allocare memoria per SE box\n");
-        return NULL;
-    }
-
-    for (int i = 0; i < size * size; i++) {
-        data[i] = 1;
-    }
-
-    StructuringElement* se = createSE(size, size, size / 2, size / 2, data);
-    free(data);
-    return se;
-} // createBoxSE
-
-StructuringElement* createCrossSE(int size) {
-    unsigned char* data = (unsigned char*)malloc(size * size * sizeof(unsigned char));
-    if (!data) {
-        fprintf(stderr, "Errore: impossibile allocare memoria per SE cross\n");
-        return NULL;
-    }
-
-    for (int i = 0; i < size; i++) {
-        for (int j = 0; j < size; j++) {
-            if (i == size / 2 || j == size / 2) {
-                data[i * size + j] = 1;
-            } else {
-                data[i * size + j] = 0;
-            }
-        }
-    }
-
-    StructuringElement* se = createSE(size, size, size / 2, size / 2, data);
-    free(data);
-    return se;
-} // createCrossSE
-
-StructuringElement* createDiskSE(int radius) {
-    int diameter = 2 * radius + 1;
-    unsigned char* data = (unsigned char*)malloc(diameter * diameter * sizeof(unsigned char));
-    if (!data) {
-        fprintf(stderr, "Errore: impossibile allocare memoria per SE disk\n");
-        return NULL;
-    }
-
-    for (int i = 0; i < diameter; i++) {
-        for (int j = 0; j < diameter; j++) {
-            int dx = i - radius;
-            int dy = j - radius;
-            if (dx * dx + dy * dy <= radius * radius) {
-                data[i * diameter + j] = 1;
-            } else {
-                data[i * diameter + j] = 0;
-            }
-        }
-    }
-
-    StructuringElement* se = createSE(diameter, diameter, radius, radius, data);
-    free(data);
-    return se;
-} // createDiskSE
-
-StructuringElement* createOrizontalLineSE(int length) {
-    unsigned char* data = (unsigned char*)malloc(length * sizeof(unsigned char));
-    if (!data) {
-        fprintf(stderr, "Errore: impossibile allocare memoria per SE linea orizzontale\n");
-        return NULL;
-    }
-
-    for (int i = 0; i < length; i++) {
-        data[i] = 1;
-    }
-
-    StructuringElement* se = createSE(length, 1, length / 2, 0, data);
-    free(data);
-    return se;
-} // createOrizontalLineSE
-
-StructuringElement* createVerticalLineSE(int length) {
-    unsigned char* data = (unsigned char*)malloc(length * sizeof(unsigned char));
-    if (!data) {
-        fprintf(stderr, "Errore: impossibile allocare memoria per SE linea verticale\n");
-        return NULL;
-    }
-
-    for (int i = 0; i < length; i++) {
-        data[i] = 1;
-    }
-
-    StructuringElement* se = createSE(1, length, 0, length / 2, data);
-    free(data);
-    return se;
-} // createVerticalLineSE
-
-StructuringElementWithOffsets* createSEWithOffsets(int width, int height, int originX, int originY, unsigned char* data) {
-    StructuringElementWithOffsets* se = (StructuringElementWithOffsets*)malloc(sizeof(StructuringElementWithOffsets));
-    if (!se) {
-        fprintf(stderr, "Errore: impossibile allocare memoria per l'elemento strutturante con offset\n");
-        return NULL;
-    }
-
-    se->width = width;
-    se->height = height;
-    se->originX = originX;
-    se->originY = originY;
-
-    se->data = (unsigned char*)malloc(width * height * sizeof(unsigned char));
-    if (!se->data) {
-        fprintf(stderr, "Errore: impossibile allocare memoria per i dati dell'elemento strutturante con offset\n");
-        free(se);
-        return NULL;
-    }
-
-    memcpy(se->data, data, width * height * sizeof(unsigned char));
-
-    // Conta il numero di pixel attivi e crea l'array di offset
-    se->numOffsets = 0;
-    for (int i = 0; i < width * height; i++) {
-        if (data[i] == 1) {
-            se->numOffsets++;
-        }
-    }
-
-    se->offsets = (SEOffset*)malloc(se->numOffsets * sizeof(SEOffset));
-    if (!se->offsets) {
-        fprintf(stderr, "Errore: impossibile allocare memoria per gli offset dell'elemento strutturante\n");
-        free(se->data);
-        free(se);
-        return NULL;
-    }
-
-    int idx = 0;
-    for (int r = 0; r < height; r++) {
-        for (int c = 0; c < width; c++) {
-            if (data[r * width + c] == 1) {
-                se->offsets[idx].dx = c - originX;
-                se->offsets[idx].dy = r - originY;
-                idx++;
-            }
-        }
-    }
-
-    return se;
-} // createSEWithOffsets
-
-StructuringElementWithOffsets* createBoxSEWithOffsets(int size) {
-    unsigned char* data = (unsigned char*)malloc(size * size * sizeof(unsigned char));
-    if (!data) {
-        fprintf(stderr, "Errore: impossibile allocare memoria per SE box con offset\n");
-        return NULL;
-    }
-
-    for (int i = 0; i < size * size; i++) {
-        data[i] = 1;
-    }
-
-    StructuringElementWithOffsets* se = createSEWithOffsets(size, size, size / 2, size / 2, data);
-    free(data);
-    return se;
-} // createBoxSEWithOffsets
-
-StructuringElementWithOffsets* createCrossSEWithOffsets(int size) {
-    unsigned char* data = (unsigned char*)malloc(size * size * sizeof(unsigned char));
-    if (!data) {
-        fprintf(stderr, "Errore: impossibile allocare memoria per SE cross con offset\n");
-        return NULL;
-    }
-
-    for (int i = 0; i < size; i++) {
-        for (int j = 0; j < size; j++) {
-            if (i == size / 2 || j == size / 2) {
-                data[i * size + j] = 1;
-            } else {
-                data[i * size + j] = 0;
-            }
-        }
-    }
-
-    StructuringElementWithOffsets* se = createSEWithOffsets(size, size, size / 2, size / 2, data);
-    free(data);
-    return se;
-} // createCrossSEWithOffsets
-
-StructuringElementWithOffsets* createDiskSEWithOffsets(int radius) {
-    int diameter = 2 * radius + 1;
-    unsigned char* data = (unsigned char*)malloc(diameter * diameter * sizeof(unsigned char));
-    if (!data) {
-        fprintf(stderr, "Errore: impossibile allocare memoria per SE disk con offset\n");
-        return NULL;
-    }
-
-    for (int i = 0; i < diameter; i++) {
-        for (int j = 0; j < diameter; j++) {
-            int dx = i - radius;
-            int dy = j - radius;
-            if (dx * dx + dy * dy <= radius * radius) {
-                data[i * diameter + j] = 1;
-            } else {
-                data[i * diameter + j] = 0;
-            }
-        }
-    }
-
-    StructuringElementWithOffsets* se = createSEWithOffsets(diameter, diameter, radius, radius, data);
-    free(data);
-    return se;
-} // createDiskSEWithOffsets
-
-StructuringElementWithOffsets* createOrizontalLineSEWithOffsets(int length) {
-    unsigned char* data = (unsigned char*)malloc(length * sizeof(unsigned char));
-    if (!data) {
-        fprintf(stderr, "Errore: impossibile allocare memoria per SE linea orizzontale con offset\n");
-        return NULL;
-    }
-
-    for (int i = 0; i < length; i++) {
-        data[i] = 1;
-    }
-
-    StructuringElementWithOffsets* se = createSEWithOffsets(length, 1, length / 2, 0, data);
-    free(data);
-    return se;
-} // createOrizontalLineSEWithOffsets
-
-StructuringElementWithOffsets* createVerticalLineSEWithOffsets(int length) {
-    unsigned char* data = (unsigned char*)malloc(length * sizeof(unsigned char));
-    if (!data) {
-        fprintf(stderr, "Errore: impossibile allocare memoria per SE linea verticale con offset\n");
-        return NULL;
-    }
-
-    for (int i = 0; i < length; i++) {
-        data[i] = 1;
-    }
-
-    StructuringElementWithOffsets* se = createSEWithOffsets(1, length, 0, length / 2, data);
-    free(data);
-    return se;
-} // createVerticalLineSEWithOffsets
-
-void freeSE(StructuringElement* se) {
-    if (se) {
-        if (se->data) {
-            free(se->data);
-        }
-        free(se);
-    }
-} // freeSE
-
-void freeSEWithOffsets(StructuringElementWithOffsets* se) {
-    if (se) {
-        if (se->data) {
-            free(se->data);
-        }
-        if (se->offsets) {
-            free(se->offsets);
-        }
-        free(se);
-    }
-} // freeSEWithOffsets
-
 Image* erosion(Image* image, StructuringElement* SE) {
     int h = image->height;
     int w = image->width;
@@ -728,3 +442,274 @@ Image* closingSeparable(Image* image, int hSize, int vSize) {
     freeImage(dilated);
     return result;
 } // closingSeparable
+
+ByteImage* erosionByteImage(ByteImage* image, StructuringElementWithOffsets* SE) {
+    // Implementazione dell'erosione per immagini in formato byte (1 bit per pixel, 8 bit per byte).
+    // La logica è simile all'erosione standard, ma bisogna gestire i bit all'interno dei byte.
+
+    int h = image->height;
+    int w = image->width;
+    int rowStride = image->rowStride;
+
+    ByteImage* imageEroded = createByteImage(w, h, image->magicNumber);
+    if (imageEroded == NULL) {
+        fprintf(stderr, "Errore: impossibile allocare la nuova immagine\n");
+        return NULL;
+    }
+    unsigned char* dataEroded = (unsigned char*)calloc(rowStride * h, sizeof(unsigned char));
+    if (!dataEroded) {
+        fprintf(stderr, "Errore: impossibile allocare memoria per i dati della nuova immagine\n");
+        free(imageEroded);
+        return NULL;
+    }
+
+    int top = SE->originY;
+    int bottom = SE->height - SE->originY - 1;
+    int left = SE->originX;
+    int right = SE->width - SE->originX - 1;
+    int rs = image->rowStride;
+
+    // calcolo gli offset linearizzati. in questo caso un offset è formato da dy, il numero di righe in verticale, 
+    // e dx, con quest'ultimo si aggiunge ByteOffset e bitOffset, che indica in quale byte andare e per quanti bit spostarsi
+    // all'interno di tale byte. Nota: dy ci permette di prendere il byte nella riga giusta, dx serve invece per capire quale byte
+    // oltre a quello corrente prendere per eseguire lo shift. infatti, se dx è positivo, allora devo fare uno shift a sinistra di dx bit, 
+    // e quindi devo prendere il byte a sinistra del byte corrente per ottenere dx bit da tale byte. Altrimenti, i bit entranti nel byte a 
+    // causa dello shift sarebbero tutti 0 e quindi non sarebbe corretto.
+    int n = SE->numOffsets;
+    int* dyRows = (int*)malloc(n * sizeof(int));
+    int* dxBytes = (int*)malloc(n * sizeof(int));
+    int* dxBits = (int*)malloc(n * sizeof(int));
+    if (!dyRows || !dxBytes || !dxBits) {
+        fprintf(stderr, "Errore: impossibile allocare memoria per gli offset byte\n");
+        free(dyRows);
+        free(dxBytes);
+        free(dxBits);
+        free(dataEroded);
+        freeByteImage(imageEroded);
+        return NULL;
+    }
+
+    for(int k = 0; k < n; k++) {
+        int dy = SE->offsets[k].dy;
+        int dx = SE->offsets[k].dx;
+
+        dyRows[k] = rs * dy; // offset in byte per spostarsi di dy righe
+
+        if (dx >= 0) { // shift a sinistra, prendo i bit da dx bit a sinistra del byte corrente
+            dxBytes[k] = dx / 8;
+            dxBits[k] = dx % 8;
+        } else { // shift a destra, prendo i bit da dx bit a destra del byte corrente, quindi non devo prendere byte aggiuntivi
+            dxBytes[k] = (dx - 7) / 8;
+            dxBits[k] = dx - dxBytes[k] * 8;
+        }
+    }
+    
+
+    for(int i = top; i < h - bottom; i++) {
+        int rowBase = i * rs; // indice della riga corrente
+        int jByteStart = (left + 7) / 8;
+        int jByteEnd = (w - right - 1) / 8;
+
+        for(int j = jByteStart; j <= jByteEnd; j++) { // j itera sui byte della riga
+            unsigned char acc = 0xFF; // inizializzo tutti i bit del byte a 1. acc sarà il byte di output
+
+            for(int k = 0; k < n; k++) { 
+                // itero per ogni bit attivo del SE. Per ogni offset, mi sposto sulla riga seguendo dyRows
+                int srcRow = rowBase + dyRows[k];   // a partire da rowBase, ovvero dalla riga che sto processando,
+                                                    // mi sposto di dy righe per arrivare alla riga da cui prendere i bit per questo offset
+
+                int srcByte = j + dxBytes[k];       // a partire dal byte j, mi sposto di dxBytes per arrivare al byte da cui prendere i bit per questo offset
+                                                    // da notare che nella riga srcRow, il byte di partenza è sempre j
+
+                int bits = dxBits[k];               // bits indica di quanti bit devo fare lo shift del byte srcByte. questo ovviamente perchè l'immagine è in byte, lo SE 
+                                                    // è in pixel e gli offset sono in pixel, quindi ogni bit del byte, che corrisponde a un pixel, deve essere shiftato.
+                                                    
+
+                unsigned char val;  // val conterrà un byte formato dai bit che servono per questo offset, presi dal byte srcByte (originale nell'immagine) e, 
+                                    // se necessario, dal byte adiacente a srcByte (a seconda di dxBits, ovvero di quanti bit devo fare lo shift)
+                                    // ottenuto il byte val, eseguo l'AND con acc, che è il byte di output, in modo da mantenere solo i bit
+                                    // che corrispondono a pixel che sono 1 nell'immagine. Eseguendo questa operazione per ogni offset, alla fine acc conterrà solo i bit 
+                                    // che corrispondono a pixel che sono 1 in tutti gli offset, ovvero in tutto il SE, e quindi sarà il byte eroso da scrivere nell'immagine di output.
+                
+                if (bits == 0) {    // nessuno shift necessario 
+                    if (srcByte >= 0 && srcByte < rs) {
+                        val = image->data[srcRow + srcByte];
+                    } else {
+                        val = 0;
+                    }
+                } else {            // shift necessario
+                    // quando eseguo uno shift, che sia a destra o a sinistra, ho bisogno oltre che dal byte corrente anche quello adiacente,
+                    // a sinistra se faccio shift a destra, a destra se faccio shift a sinistra, in modo da ottenere i bit che entrano nel byte a causa dello shift.
+                    // Definisco quindi byteA e byteB: uno dei due sarà il byte srcByte, l'altro sarà il byte adiacente a srcByte, a seconda di dxBits.
+                    // Esempio: dxBits = 3, shift a sinistra di 3 bit
+                    //     0          1          2
+                    // [10101011] [11010101] [10101010]
+                    // mi trovo su scrByte = 1, dxBits = 3, shift a sinistra di 3 bit -> i bit che entrano nel byte 1 a causa dello shift sono 
+                    // i primi 3 bit del byte 2 a destra di srcByte (110). quindi per ottenere il byte val, faccio uno shift a sinistra di 3 bit del byte srcByte, byteA (10101011 << 3) 
+                    // e uno shift a destra di 5 bit del byte adiacente a srcByte, byteB (11010101 >> 5), in modo da ottenere i bit che entrano nel byte a causa dello shift (00000110)
+                    // e poi faccio l'OR tra i due risultati per ottenere il byte val (10101100).
+                    // Se invece dxBits fosse -3, shift a destra di 3 bit, i bit che entrano nel byte 1 a causa dello shift sarebbero i 3 bit più a destra del byte 0 (011).
+                    // ByteA sarebbe quindi il byte 0 e byteB sarebbe il byte 1, e per ottenere val farei uno shift a destra di 3 bit del byteB e uno shift a sinistra di 5 bit del byteA, e poi l'OR tra i due risultati.
+                    
+                    unsigned char byteA = 0;
+                    unsigned char byteB = 0;
+                    if (srcByte >= 0 && srcByte < rs) {
+                        byteA = image->data[srcRow + srcByte];
+                    }
+                    if (srcByte + 1 >= 0 && srcByte + 1 < rs) {
+                        byteB = image->data[srcRow + srcByte + 1];
+                    }
+                    val = ((byteA << bits) | byteB >> (8 - bits));
+                }
+                // Fatto ciò, faccio l'AND tra acc e val. Se val ha un bit a 0, allora anche acc avrà quel bit a 0, e quindi quel pixel sarà 0 nell'immagine erosa, altrimenti rimarrà 1.
+                acc &= val;
+                if(acc == 0) break; // vuole dire che non ci sono più bit a 1 in acc, quindi non serve continuare ad iterare sugli offset, tanto acc rimarrà 0
+            }
+            dataEroded[rowBase + j] = acc;
+        }
+    }
+
+    free(dyRows);
+    free(dxBytes);
+    free(dxBits);
+
+    imageEroded->data = dataEroded;
+    return imageEroded;
+}
+
+ByteImage* dilationByteImage(ByteImage* image, StructuringElementWithOffsets* SE) {
+    int h = image->height;
+    int w = image->width;
+    int rs = image->rowStride;
+
+    // definisco il padding per l'immagine di output
+    int topPadding = SE->originY;    
+    int bottomPadding = SE->height - SE->originY - 1;
+    int leftPaddingBytes = (SE->originX + 7) / 8;
+    int rightPaddingBytes = ((SE->width - SE->originX - 1) / 8) + 1;
+
+    int newH = h + topPadding + bottomPadding;
+    int newRs = rs + leftPaddingBytes + rightPaddingBytes;
+
+    // L'immagine di output deve mantenere la stessa dimensione dell'input;
+    // il padding resta solo nei buffer di lavoro interni.
+    ByteImage* imageDilated = createByteImage(w, h, image->magicNumber);
+    if (imageDilated == NULL) {
+        fprintf(stderr, "Errore: impossibile allocare la nuova immagine\n");
+        return NULL;
+    }
+
+    unsigned char* dataDilated = (unsigned char*)calloc(newRs * newH, sizeof(unsigned char));
+    if (!dataDilated) {
+        fprintf(stderr, "Errore: impossibile allocare memoria per i dati della nuova immagine\n");
+        free(imageDilated);
+        return NULL;
+    }
+
+    // alloco l'immagine di input con padding 
+    unsigned char* dataPadded = (unsigned char*)calloc(newRs * newH, sizeof(unsigned char));
+     if (!dataPadded) {
+        fprintf(stderr, "Errore: impossibile allocare memoria per i dati della nuova immagine\n");
+        free(imageDilated);
+        free(dataDilated);
+        return NULL;
+    }
+
+    for(int i = topPadding; i < newH - bottomPadding; i++) {
+        const unsigned char* src = image->data + (i - topPadding) * rs;
+        unsigned char* dst = dataPadded + (i * newRs) + leftPaddingBytes;
+        memcpy(dst, src, (size_t)rs);
+    }
+
+
+
+    // calcolo gli offset linearizzati
+    int n = SE->numOffsets;
+    int* dyRows = (int*)malloc(n * sizeof(int));
+    int* dxBytes = (int*)malloc(n * sizeof(int));
+    int* dxBits = (int*)malloc(n * sizeof(int));
+    if (!dyRows || !dxBytes || !dxBits) {
+        fprintf(stderr, "Errore: impossibile allocare memoria per gli offset byte\n");
+        free(dyRows);
+        free(dxBytes);
+        free(dxBits);
+        free(dataPadded);
+        free(dataDilated);
+        freeByteImage(imageDilated);
+        return NULL;
+    }
+
+    for (int k = 0; k < n; k++) {
+        int dy = SE->offsets[k].dy;
+        int dx = SE->offsets[k].dx;
+
+        dyRows[k] = dy * newRs;
+        
+        if (dx >= 0) {
+            dxBytes[k] = dx / 8;
+            dxBits[k] = dx % 8;
+        } else {
+            dxBytes[k] = (dx - 7) / 8;
+            dxBits[k] = dx - dxBytes[k] * 8;
+        }
+    }
+
+    
+
+    for (int i = topPadding; i < newH - bottomPadding; i++) {
+        for (int j = leftPaddingBytes; j < newRs - rightPaddingBytes; j++) {
+            unsigned char srcByte = dataPadded[i * newRs + j];
+            int dstIdx = i * newRs + j;
+            if (srcByte == 0)
+                continue;
+
+            for (int k = 0; k < n; k++) {
+
+                dataDilated[dstIdx + dyRows[k] + dxBytes[k]] |= srcByte >> dxBits[k];
+                dataDilated[dstIdx + dyRows[k] + dxBytes[k] + !!dxBits[k]] |= srcByte << ((8 - dxBits[k]) & 7);
+            }
+        }
+    }
+
+    free(dyRows);
+    free(dxBytes);
+    free(dxBits);
+
+    unsigned char* dataOutput = (unsigned char*)calloc(rs * h, sizeof(unsigned char));
+    if (!dataOutput) {
+        fprintf(stderr, "Errore: impossibile allocare memoria per i dati della nuova immagine\n");
+        free(dataPadded);
+        free(dataDilated);
+        freeByteImage(imageDilated);
+        return NULL;
+    }
+
+    // Ritaglio della regione centrale (senza padding) per ottenere un output h x w.
+    for (int i = 0; i < h; i++) {
+        const unsigned char* src = dataDilated + (i + topPadding) * newRs + leftPaddingBytes;
+        unsigned char* dst = dataOutput + i * rs;
+        memcpy(dst, src, (size_t)rs);
+    }
+
+    free(dataPadded);
+    free(dataDilated);
+    imageDilated->data = dataOutput;
+    return imageDilated;
+}
+
+ByteImage* openingByteImage(ByteImage* image, StructuringElementWithOffsets* SE) {
+    ByteImage* eroded = erosionByteImage(image, SE);
+    if (eroded == NULL) return NULL;
+    ByteImage* result = dilationByteImage(eroded, SE);
+    freeByteImage(eroded);
+    return result;
+}
+
+ByteImage* closingByteImage(ByteImage* image, StructuringElementWithOffsets* SE) {
+    ByteImage* dilated = dilationByteImage(image, SE);
+    if (dilated == NULL) return NULL;
+    ByteImage* result = erosionByteImage(dilated, SE);
+    freeByteImage(dilated);
+    return result;
+}
+
