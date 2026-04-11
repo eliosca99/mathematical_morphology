@@ -84,11 +84,11 @@ static int makeProgressiveOutputDirectory(const char* rootDir, char* outDir, siz
     return -1;
 }
 
-typedef Image* (*BaseOp)(Image*, StructuringElement*);
-typedef Image* (*OffsetOp)(Image*, StructuringElementWithOffsets*);
-typedef Image* (*SeparableOp)(Image*, int, int);
-typedef ByteImage* (*ByteOffsetOp)(ByteImage*, StructuringElementWithOffsets*);
-typedef Uint64Image* (*Uint64OffsetOp)(Uint64Image*, StructuringElementWithOffsets*);
+typedef int (*BaseOp)(Image*, StructuringElement*, Image*, Image*);
+typedef int (*OffsetOp)(Image*, StructuringElementWithOffsets*, Image*, Image*);
+typedef int (*SeparableOp)(Image*, int, int, Image*, Image*);
+typedef int (*ByteOffsetOp)(ByteImage*, StructuringElementWithOffsets*, ByteImage*, ByteImage*);
+typedef int (*Uint64OffsetOp)(Uint64Image*, StructuringElementWithOffsets*, Uint64Image*, Uint64Image*);
 
 typedef struct {
     const char* name;
@@ -100,20 +100,77 @@ typedef struct {
     const char* outputFile;
 } OperationSpec;
 
+static Image* allocateImageBufferLike(const Image* reference) {
+    Image* out = createImage(reference->width, reference->height, (char*)reference->magicNumber);
+    if (!out) {
+        return NULL;
+    }
+
+    out->data = (unsigned char*)calloc((size_t)reference->width * (size_t)reference->height, sizeof(unsigned char));
+    if (!out->data) {
+        freeImage(out);
+        return NULL;
+    }
+
+    return out;
+}
+
+static ByteImage* allocateByteImageBufferLike(const ByteImage* reference) {
+    ByteImage* out = createByteImage(reference->width, reference->height, (char*)reference->magicNumber);
+    if (!out) {
+        return NULL;
+    }
+
+    out->data = (unsigned char*)calloc((size_t)reference->rowStride * (size_t)reference->height, sizeof(unsigned char));
+    if (!out->data) {
+        freeByteImage(out);
+        return NULL;
+    }
+
+    return out;
+}
+
+static Uint64Image* allocateUint64ImageBufferLike(const Uint64Image* reference) {
+    Uint64Image* out = createUint64Image(reference->width, reference->height, (char*)reference->magicNumber);
+    if (!out) {
+        return NULL;
+    }
+
+    out->data = (uint64_t*)calloc((size_t)reference->rowStride * (size_t)reference->height, sizeof(uint64_t));
+    if (!out->data) {
+        freeUint64Image(out);
+        return NULL;
+    }
+
+    return out;
+}
+
 static double benchmarkBase(Image* image, StructuringElement* se, BaseOp op, int runs) {
     struct timespec start, end;
     double total = 0.0;
 
+    Image* out = allocateImageBufferLike(image);
+    Image* tmp = allocateImageBufferLike(image);
+    if (!out || !tmp) {
+        freeImage(out);
+        freeImage(tmp);
+        return -1.0;
+    }
+
     for (int r = 0; r < runs; r++) {
         clock_gettime(CLOCK_MONOTONIC, &start);
-        Image* out = op(image, se);
+        int rc = op(image, se, out, tmp);
         clock_gettime(CLOCK_MONOTONIC, &end);
-        if (!out) {
+        if (rc != 0) {
+            freeImage(tmp);
+            freeImage(out);
             return -1.0;
         }
         total += timeDiffMs(start, end);
-        freeImage(out);
     }
+
+    freeImage(tmp);
+    freeImage(out);
 
     return total / runs;
 }
@@ -122,16 +179,28 @@ static double benchmarkOffset(Image* image, StructuringElementWithOffsets* se, O
     struct timespec start, end;
     double total = 0.0;
 
+    Image* out = allocateImageBufferLike(image);
+    Image* tmp = allocateImageBufferLike(image);
+    if (!out || !tmp) {
+        freeImage(out);
+        freeImage(tmp);
+        return -1.0;
+    }
+
     for (int r = 0; r < runs; r++) {
         clock_gettime(CLOCK_MONOTONIC, &start);
-        Image* out = op(image, se);
+        int rc = op(image, se, out, tmp);
         clock_gettime(CLOCK_MONOTONIC, &end);
-        if (!out) {
+        if (rc != 0) {
+            freeImage(tmp);
+            freeImage(out);
             return -1.0;
         }
         total += timeDiffMs(start, end);
-        freeImage(out);
     }
+
+    freeImage(tmp);
+    freeImage(out);
 
     return total / runs;
 }
@@ -140,16 +209,28 @@ static double benchmarkSeparable(Image* image, int size, SeparableOp op, int run
     struct timespec start, end;
     double total = 0.0;
 
+    Image* out = allocateImageBufferLike(image);
+    Image* tmp = allocateImageBufferLike(image);
+    if (!out || !tmp) {
+        freeImage(out);
+        freeImage(tmp);
+        return -1.0;
+    }
+
     for (int r = 0; r < runs; r++) {
         clock_gettime(CLOCK_MONOTONIC, &start);
-        Image* out = op(image, size, size);
+        int rc = op(image, size, size, out, tmp);
         clock_gettime(CLOCK_MONOTONIC, &end);
-        if (!out) {
+        if (rc != 0) {
+            freeImage(tmp);
+            freeImage(out);
             return -1.0;
         }
         total += timeDiffMs(start, end);
-        freeImage(out);
     }
+
+    freeImage(tmp);
+    freeImage(out);
 
     return total / runs;
 }
@@ -162,16 +243,28 @@ static double benchmarkByteOffset(ByteImage* image, StructuringElementWithOffset
         return -1.0;
     }
 
+    ByteImage* out = allocateByteImageBufferLike(image);
+    ByteImage* tmp = allocateByteImageBufferLike(image);
+    if (!out || !tmp) {
+        freeByteImage(out);
+        freeByteImage(tmp);
+        return -1.0;
+    }
+
     for (int r = 0; r < runs; r++) {
         clock_gettime(CLOCK_MONOTONIC, &start);
-        ByteImage* out = op(image, se);
+        int rc = op(image, se, out, tmp);
         clock_gettime(CLOCK_MONOTONIC, &end);
-        if (!out) {
+        if (rc != 0) {
+            freeByteImage(tmp);
+            freeByteImage(out);
             return -1.0;
         }
         total += timeDiffMs(start, end);
-        freeByteImage(out);
     }
+
+    freeByteImage(tmp);
+    freeByteImage(out);
 
     return total / runs;
 }
@@ -184,16 +277,28 @@ static double benchmarkUint64Offset(Uint64Image* image, StructuringElementWithOf
         return -1.0;
     }
 
+    Uint64Image* out = allocateUint64ImageBufferLike(image);
+    Uint64Image* tmp = allocateUint64ImageBufferLike(image);
+    if (!out || !tmp) {
+        freeUint64Image(out);
+        freeUint64Image(tmp);
+        return -1.0;
+    }
+
     for (int r = 0; r < runs; r++) {
         clock_gettime(CLOCK_MONOTONIC, &start);
-        Uint64Image* out = op(image, se);
+        int rc = op(image, se, out, tmp);
         clock_gettime(CLOCK_MONOTONIC, &end);
-        if (!out) {
+        if (rc != 0) {
+            freeUint64Image(tmp);
+            freeUint64Image(out);
             return -1.0;
         }
         total += timeDiffMs(start, end);
-        freeUint64Image(out);
     }
+
+    freeUint64Image(tmp);
+    freeUint64Image(out);
 
     return total / runs;
 }
@@ -207,28 +312,43 @@ static void formatMetric(double value, char* out, size_t outSize) {
 }
 
 static int saveOperationImages(Image* image, StructuringElement* se, const char* outputDir, const OperationSpec* ops, int numOps) {
+    Image* out = allocateImageBufferLike(image);
+    Image* tmp = allocateImageBufferLike(image);
+    if (!out || !tmp) {
+        freeImage(out);
+        freeImage(tmp);
+        fprintf(stderr, "Errore: impossibile allocare i buffer per il salvataggio immagini\n");
+        return -1;
+    }
+
     for (int i = 0; i < numOps; i++) {
         char path[1024];
         int written = snprintf(path, sizeof(path), "%s/%s", outputDir, ops[i].outputFile);
         if (written < 0 || written >= (int)sizeof(path)) {
             fprintf(stderr, "Errore: path troppo lungo per il file output\n");
+            freeImage(tmp);
+            freeImage(out);
             return -1;
         }
 
-        Image* out = ops[i].base(image, se);
-        if (!out) {
+        int rc = ops[i].base(image, se, out, tmp);
+        if (rc != 0) {
             fprintf(stderr, "Errore: impossibile calcolare l'operazione %s per il salvataggio\n", ops[i].name);
+            freeImage(tmp);
+            freeImage(out);
             return -1;
         }
 
         if (saveImage(path, out) != 0) {
             fprintf(stderr, "Errore: impossibile salvare il file %s\n", path);
+            freeImage(tmp);
             freeImage(out);
             return -1;
         }
-
-        freeImage(out);
     }
+
+    freeImage(tmp);
+    freeImage(out);
 
     return 0;
 }

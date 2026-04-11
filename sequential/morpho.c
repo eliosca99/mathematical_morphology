@@ -1,21 +1,18 @@
 #include "morpho.h"
 #include <stdint.h>
+#include <string.h>
 
-Image* erosion(Image* image, StructuringElement* SE) {
+int erosion(Image* image, StructuringElement* SE, Image* output, Image* temp) {
+    (void)temp;
     int h = image->height;
     int w = image->width;
-    
-    Image* imageEroded = createImage(w, h, image->magicNumber);
-    if(imageEroded == NULL) {
-        fprintf(stderr, "Errore: impossibile allocare la nuova immagine\n");
-        return NULL;
+
+    if (output == NULL || output->data == NULL) {
+        fprintf(stderr, "Errore: output non valido\n");
+        return -1;
     }
-    unsigned char* dataEroded = (unsigned char*)calloc(w * h, sizeof(unsigned char));
-    if(!dataEroded) {
-        fprintf(stderr, "Errore: impossibile allocare memoria per i dati della nuova immagine\n");
-        free(imageEroded);
-        return NULL;
-    }
+    unsigned char* dataEroded = output->data;
+    memset(dataEroded, 0, (size_t)w * (size_t)h * sizeof(unsigned char));
         
     //qui mi definisco i bordi dell'immagine, perchè l'SE deve essere totalmente contenuto nell'immagine, non può sforare -> avrò sicuro un bordo di zeri
     int top = SE->originY;
@@ -48,26 +45,20 @@ Image* erosion(Image* image, StructuringElement* SE) {
             }
         }
     }
-    imageEroded->data = dataEroded;
-
-    return imageEroded;
+    return 0;
 }
 
-Image* dilation(Image* image, StructuringElement* SE) {
+int dilation(Image* image, StructuringElement* SE, Image* output, Image* temp) {
+    (void)temp;
     int h = image->height;
     int w = image->width;
 
-    Image* imageDilated = createImage(w, h, image->magicNumber);
-    if(imageDilated == NULL) {
-        fprintf(stderr, "Errore: impossibile allocare la nuova immagine\n");
-        return NULL;
+    if (output == NULL || output->data == NULL) {
+        fprintf(stderr, "Errore: output non valido\n");
+        return -1;
     }
-    unsigned char* dataDilated = (unsigned char*)calloc(w * h, sizeof(unsigned char));
-    if(!dataDilated) {
-        fprintf(stderr, "Errore: impossibile allocare memoria per i dati della nuova immagine\n");
-        free(imageDilated);
-        return NULL;
-    }
+    unsigned char* dataDilated = output->data;
+    memset(dataDilated, 0, (size_t)w * (size_t)h * sizeof(unsigned char));
 
     // per ogni pixel dell'immagine che è 1, "stampo" l'SE centrato su quel pixel
     for(int i = 0; i < h; i++) {
@@ -87,28 +78,29 @@ Image* dilation(Image* image, StructuringElement* SE) {
             }
         }
     }
-    imageDilated->data = dataDilated;
-
-    return imageDilated;
+    return 0;
 }
 
-Image* opening(Image* image, StructuringElement* SE) {
-    Image* eroded = erosion(image, SE);
-    if(eroded == NULL) return NULL;
-    Image* result = dilation(eroded, SE);
-    freeImage(eroded);
-    return result;
+int opening(Image* image, StructuringElement* SE, Image* output, Image* temp) {
+    if (temp == NULL || temp->data == NULL) {
+        fprintf(stderr, "Errore: buffer temporaneo non valido\n");
+        return -1;
+    }
+    if (erosion(image, SE, temp, NULL) != 0) return -1;
+    return dilation(temp, SE, output, NULL);
 }
 
-Image* closing(Image* image, StructuringElement* SE) {
-    Image* dilated = dilation(image, SE);
-    if(dilated == NULL) return NULL;
-    Image* result = erosion(dilated, SE);
-    freeImage(dilated);
-    return result;
+int closing(Image* image, StructuringElement* SE, Image* output, Image* temp) {
+    if (temp == NULL || temp->data == NULL) {
+        fprintf(stderr, "Errore: buffer temporaneo non valido\n");
+        return -1;
+    }
+    if (dilation(image, SE, temp, NULL) != 0) return -1;
+    return erosion(temp, SE, output, NULL);
 }
 
-Image* erosionWithOffsets (Image* image, StructuringElementWithOffsets* SE) {
+int erosionWithOffsets (Image* image, StructuringElementWithOffsets* SE, Image* output, Image* temp) {
+    (void)temp;
     // in questa versione, utilizzo gli offset del kernel. In questo modo non devo iterare su ogni pixel del kernel, ma solo su quelli pari a 1. 
     // Inoltre, linearizzo gli indici in modo che ho 3 for invece di 4, e nel for interno in cui valuto la corrispondenza tra i pixel dell'immagine e del kernel
     // devo eseguire una semplice somma e non moltiplicazione e somma.
@@ -116,17 +108,12 @@ Image* erosionWithOffsets (Image* image, StructuringElementWithOffsets* SE) {
     int h = image->height;
     int w = image->width;
     
-    Image* imageEroded = createImage(w, h, image->magicNumber);
-    if(imageEroded == NULL) {
-        fprintf(stderr, "Errore: impossibile allocare la nuova immagine\n");
-        return NULL;
+    if (output == NULL || output->data == NULL) {
+        fprintf(stderr, "Errore: output non valido\n");
+        return -1;
     }
-    unsigned char* dataEroded = (unsigned char*)calloc(w * h, sizeof(unsigned char));
-    if(!dataEroded) {
-        fprintf(stderr, "Errore: impossibile allocare memoria per i dati della nuova immagine\n");
-        free(imageEroded);
-        return NULL;
-    }
+    unsigned char* dataEroded = output->data;
+    memset(dataEroded, 0, (size_t)w * (size_t)h * sizeof(unsigned char));
         
     // qui mi definisco i bordi dell'immagine, perchè l'SE deve essere totalmente contenuto nell'immagine, non può sforare -> avrò sicuro un bordo di zeri
     int top = SE->originY;
@@ -138,9 +125,7 @@ Image* erosionWithOffsets (Image* image, StructuringElementWithOffsets* SE) {
     int* linearOffsets = (int*)malloc(SE->numOffsets * sizeof(int));
     if(!linearOffsets) {
         fprintf(stderr, "Errore: impossibile allocare memoria per gli offset linearizzati\n");
-        free(dataEroded);
-        free(imageEroded);
-        return NULL;
+        return -1;
     }
     for(int i = 0; i < SE->numOffsets; i++) {
         linearOffsets[i] = SE->offsets[i].dy * w + SE->offsets[i].dx;
@@ -164,33 +149,26 @@ Image* erosionWithOffsets (Image* image, StructuringElementWithOffsets* SE) {
             }
         }
 
-    imageEroded->data = dataEroded;
-
-    return imageEroded;
+    free(linearOffsets);
+    return 0;
 } //erosionWithOffsets
 
-Image* dilationWithOffsets(Image* image, StructuringElementWithOffsets* SE) {
+int dilationWithOffsets(Image* image, StructuringElementWithOffsets* SE, Image* output, Image* temp) {
+    (void)temp;
     int h = image->height;
     int w = image->width;
 
-    Image* imageDilated = createImage(w, h, image->magicNumber);
-    if(imageDilated == NULL) {
-        fprintf(stderr, "Errore: impossibile allocare la nuova immagine\n");
-        return NULL;
+    if (output == NULL || output->data == NULL) {
+        fprintf(stderr, "Errore: output non valido\n");
+        return -1;
     }
-    unsigned char* dataDilated = (unsigned char*)calloc(w * h, sizeof(unsigned char));
-    if(!dataDilated) {
-        fprintf(stderr, "Errore: impossibile allocare memoria per i dati della nuova immagine\n");
-        freeImage(imageDilated);
-        return NULL;
-    }
+    unsigned char* dataDilated = output->data;
+    memset(dataDilated, 0, (size_t)w * (size_t)h * sizeof(unsigned char));
 
     int* linearOffsets = (int*)malloc(SE->numOffsets * sizeof(int));
     if(!linearOffsets) {
         fprintf(stderr, "Errore: impossibile allocare memoria per gli offset linearizzati\n");
-        free(dataDilated);
-        freeImage(imageDilated);
-        return NULL;
+        return -1;
     }
     for(int i = 0; i < SE->numOffsets; i++) {
         linearOffsets[i] = SE->offsets[i].dy * w + SE->offsets[i].dx;
@@ -265,28 +243,29 @@ Image* dilationWithOffsets(Image* image, StructuringElementWithOffsets* SE) {
     }
 
     free(linearOffsets);
-    imageDilated->data = dataDilated;
-
-    return imageDilated;
+    return 0;
 } // dilationWithOffsets
 
-Image* openingWithOffsets(Image* image, StructuringElementWithOffsets* SE) {
-    Image* eroded = erosionWithOffsets(image, SE);
-    if(eroded == NULL) return NULL;
-    Image* result = dilationWithOffsets(eroded, SE);
-    freeImage(eroded);
-    return result;
+int openingWithOffsets(Image* image, StructuringElementWithOffsets* SE, Image* output, Image* temp) {
+    if (temp == NULL || temp->data == NULL) {
+        fprintf(stderr, "Errore: buffer temporaneo non valido\n");
+        return -1;
+    }
+    if (erosionWithOffsets(image, SE, temp, NULL) != 0) return -1;
+    return dilationWithOffsets(temp, SE, output, NULL);
 } // openingWithOffsets
 
-Image* closingWithOffsets(Image* image, StructuringElementWithOffsets* SE) {
-    Image* dilated = dilationWithOffsets(image, SE);
-    if(dilated == NULL) return NULL;
-    Image* result = erosionWithOffsets(dilated, SE);
-    freeImage(dilated);
-    return result;
+int closingWithOffsets(Image* image, StructuringElementWithOffsets* SE, Image* output, Image* temp) {
+    if (temp == NULL || temp->data == NULL) {
+        fprintf(stderr, "Errore: buffer temporaneo non valido\n");
+        return -1;
+    }
+    if (dilationWithOffsets(image, SE, temp, NULL) != 0) return -1;
+    return erosionWithOffsets(temp, SE, output, NULL);
 } // closingWithOffsets
 
-Image* erosionSeparable(Image* image, int hSize, int vSize) {
+int erosionSeparable(Image* image, int hSize, int vSize, Image* output, Image* tempOut) {
+    (void)tempOut;
     // Decomposizione separabile: un'erosione con box hSize x vSize equivale a
     // un'erosione orizzontale (linea 1 x hSize) seguita da un'erosione verticale (linea vSize x 1).
     // Complessità: O(n * m * (hSize + vSize)) invece di O(n * m * hSize * vSize).
@@ -298,7 +277,7 @@ Image* erosionSeparable(Image* image, int hSize, int vSize) {
     unsigned char* temp = (unsigned char*)calloc(w * h, sizeof(unsigned char));
     if (!temp) {
         fprintf(stderr, "Errore: impossibile allocare memoria per il buffer temporaneo\n");
-        return NULL;
+        return -1;
     }
 
     int hLeft = hSize / 2;
@@ -319,20 +298,13 @@ Image* erosionSeparable(Image* image, int hSize, int vSize) {
         }
     }
 
-    // --- Passo 2: erosione verticale sul risultato intermedio ---
-    Image* imageEroded = createImage(w, h, image->magicNumber);
-    if (!imageEroded) {
-        fprintf(stderr, "Errore: impossibile allocare la nuova immagine\n");
+    if (output == NULL || output->data == NULL) {
+        fprintf(stderr, "Errore: output non valido\n");
         free(temp);
-        return NULL;
+        return -1;
     }
-    unsigned char* dataEroded = (unsigned char*)calloc(w * h, sizeof(unsigned char));
-    if (!dataEroded) {
-        fprintf(stderr, "Errore: impossibile allocare memoria per i dati della nuova immagine\n");
-        freeImage(imageEroded);
-        free(temp);
-        return NULL;
-    }
+    unsigned char* dataEroded = output->data;
+    memset(dataEroded, 0, (size_t)w * (size_t)h * sizeof(unsigned char));
 
     int vTop = vSize / 2;
     int vBottom = vSize - vTop - 1;
@@ -353,12 +325,12 @@ Image* erosionSeparable(Image* image, int hSize, int vSize) {
     }
 
     free(temp);
-    imageEroded->data = dataEroded;
 
-    return imageEroded;
+    return 0;
 } // erosionSeparable
 
-Image* dilationSeparable(Image* image, int hSize, int vSize) {
+int dilationSeparable(Image* image, int hSize, int vSize, Image* output, Image* tempOut) {
+    (void)tempOut;
     // Decomposizione separabile: una dilatazione con box hSize x vSize equivale a
     // una dilatazione orizzontale (linea 1 x hSize) seguita da una dilatazione verticale (linea vSize x 1).
 
@@ -369,7 +341,7 @@ Image* dilationSeparable(Image* image, int hSize, int vSize) {
     unsigned char* temp = (unsigned char*)calloc(w * h, sizeof(unsigned char));
     if (!temp) {
         fprintf(stderr, "Errore: impossibile allocare memoria per il buffer temporaneo\n");
-        return NULL;
+        return -1;
     }
 
     int hLeft = hSize / 2;
@@ -390,20 +362,13 @@ Image* dilationSeparable(Image* image, int hSize, int vSize) {
         }
     }
 
-    // --- Passo 2: dilatazione verticale sul risultato intermedio ---
-    Image* imageDilated = createImage(w, h, image->magicNumber);
-    if (!imageDilated) {
-        fprintf(stderr, "Errore: impossibile allocare la nuova immagine\n");
+    if (output == NULL || output->data == NULL) {
+        fprintf(stderr, "Errore: output non valido\n");
         free(temp);
-        return NULL;
+        return -1;
     }
-    unsigned char* dataDilated = (unsigned char*)calloc(w * h, sizeof(unsigned char));
-    if (!dataDilated) {
-        fprintf(stderr, "Errore: impossibile allocare memoria per i dati della nuova immagine\n");
-        freeImage(imageDilated);
-        free(temp);
-        return NULL;
-    }
+    unsigned char* dataDilated = output->data;
+    memset(dataDilated, 0, (size_t)w * (size_t)h * sizeof(unsigned char));
 
     int vTop = vSize / 2;
     int vBottom = vSize - vTop - 1;
@@ -423,28 +388,30 @@ Image* dilationSeparable(Image* image, int hSize, int vSize) {
     }
 
     free(temp);
-    imageDilated->data = dataDilated;
 
-    return imageDilated;
+    return 0;
 } // dilationSeparable
 
-Image* openingSeparable(Image* image, int hSize, int vSize) {
-    Image* eroded = erosionSeparable(image, hSize, vSize);
-    if (eroded == NULL) return NULL;
-    Image* result = dilationSeparable(eroded, hSize, vSize);
-    freeImage(eroded);
-    return result;
+int openingSeparable(Image* image, int hSize, int vSize, Image* output, Image* temp) {
+    if (temp == NULL || temp->data == NULL) {
+        fprintf(stderr, "Errore: buffer temporaneo non valido\n");
+        return -1;
+    }
+    if (erosionSeparable(image, hSize, vSize, temp, NULL) != 0) return -1;
+    return dilationSeparable(temp, hSize, vSize, output, NULL);
 } // openingSeparable
 
-Image* closingSeparable(Image* image, int hSize, int vSize) {
-    Image* dilated = dilationSeparable(image, hSize, vSize);
-    if (dilated == NULL) return NULL;
-    Image* result = erosionSeparable(dilated, hSize, vSize);
-    freeImage(dilated);
-    return result;
+int closingSeparable(Image* image, int hSize, int vSize, Image* output, Image* temp) {
+    if (temp == NULL || temp->data == NULL) {
+        fprintf(stderr, "Errore: buffer temporaneo non valido\n");
+        return -1;
+    }
+    if (dilationSeparable(image, hSize, vSize, temp, NULL) != 0) return -1;
+    return erosionSeparable(temp, hSize, vSize, output, NULL);
 } // closingSeparable
 
-ByteImage* erosionByteImage(ByteImage* image, StructuringElementWithOffsets* SE) {
+int erosionByteImage(ByteImage* image, StructuringElementWithOffsets* SE, ByteImage* output, ByteImage* temp) {
+    (void)temp;
     // Implementazione dell'erosione per immagini in formato byte (1 bit per pixel, 8 bit per byte).
     // La logica è simile all'erosione standard, ma bisogna gestire i bit all'interno dei byte.
 
@@ -452,17 +419,12 @@ ByteImage* erosionByteImage(ByteImage* image, StructuringElementWithOffsets* SE)
     int w = image->width;
     int rs = image->rowStride;
 
-    ByteImage* imageEroded = createByteImage(w, h, image->magicNumber);
-    if (imageEroded == NULL) {
-        fprintf(stderr, "Errore: impossibile allocare la nuova immagine\n");
-        return NULL;
+    if (output == NULL || output->data == NULL) {
+        fprintf(stderr, "Errore: output non valido\n");
+        return -1;
     }
-    unsigned char* dataEroded = (unsigned char*)calloc(rs * h, sizeof(unsigned char));
-    if (!dataEroded) {
-        fprintf(stderr, "Errore: impossibile allocare memoria per i dati della nuova immagine\n");
-        free(imageEroded);
-        return NULL;
-    }
+    unsigned char* dataEroded = output->data;
+    memset(dataEroded, 0, (size_t)rs * (size_t)h * sizeof(unsigned char));
 
     int top = SE->originY;
     int bottom = SE->height - SE->originY - 1;
@@ -485,9 +447,7 @@ ByteImage* erosionByteImage(ByteImage* image, StructuringElementWithOffsets* SE)
         free(dyRows);
         free(dxBytes);
         free(dxBits);
-        free(dataEroded);
-        freeByteImage(imageEroded);
-        return NULL;
+        return -1;
     }
 
     for(int k = 0; k < n; k++) {
@@ -574,11 +534,11 @@ ByteImage* erosionByteImage(ByteImage* image, StructuringElementWithOffsets* SE)
     free(dxBytes);
     free(dxBits);
 
-    imageEroded->data = dataEroded;
-    return imageEroded;
+    return 0;
 }
 
-ByteImage* dilationByteImage(ByteImage* image, StructuringElementWithOffsets* SE) {
+int dilationByteImage(ByteImage* image, StructuringElementWithOffsets* SE, ByteImage* output, ByteImage* temp) {
+    (void)temp;
     int h = image->height;
     int w = image->width;
     int rs = image->rowStride;
@@ -592,28 +552,24 @@ ByteImage* dilationByteImage(ByteImage* image, StructuringElementWithOffsets* SE
     int newH = h + topPadding + bottomPadding;
     int newRs = rs + leftPaddingBytes + rightPaddingBytes;
 
-    // L'immagine di output deve mantenere la stessa dimensione dell'input;
-    // il padding resta solo nei buffer di lavoro interni.
-    ByteImage* imageDilated = createByteImage(w, h, image->magicNumber);
-    if (imageDilated == NULL) {
-        fprintf(stderr, "Errore: impossibile allocare la nuova immagine\n");
-        return NULL;
+    if (output == NULL || output->data == NULL) {
+        fprintf(stderr, "Errore: output non valido\n");
+        return -1;
     }
+    memset(output->data, 0, (size_t)rs * (size_t)h * sizeof(unsigned char));
 
     unsigned char* dataDilated = (unsigned char*)calloc(newRs * newH, sizeof(unsigned char));
     if (!dataDilated) {
         fprintf(stderr, "Errore: impossibile allocare memoria per i dati della nuova immagine\n");
-        free(imageDilated);
-        return NULL;
+        return -1;
     }
 
     // alloco l'immagine di input con padding 
     unsigned char* dataPadded = (unsigned char*)calloc(newRs * newH, sizeof(unsigned char));
      if (!dataPadded) {
         fprintf(stderr, "Errore: impossibile allocare memoria per i dati della nuova immagine\n");
-        free(imageDilated);
         free(dataDilated);
-        return NULL;
+        return -1;
     }
 
     for(int i = topPadding; i < newH - bottomPadding; i++) {
@@ -636,8 +592,7 @@ ByteImage* dilationByteImage(ByteImage* image, StructuringElementWithOffsets* SE
         free(dxBits);
         free(dataPadded);
         free(dataDilated);
-        freeByteImage(imageDilated);
-        return NULL;
+        return -1;
     }
 
     for (int k = 0; k < n; k++) {
@@ -676,14 +631,7 @@ ByteImage* dilationByteImage(ByteImage* image, StructuringElementWithOffsets* SE
     free(dxBytes);
     free(dxBits);
 
-    unsigned char* dataOutput = (unsigned char*)calloc(rs * h, sizeof(unsigned char));
-    if (!dataOutput) {
-        fprintf(stderr, "Errore: impossibile allocare memoria per i dati della nuova immagine\n");
-        free(dataPadded);
-        free(dataDilated);
-        freeByteImage(imageDilated);
-        return NULL;
-    }
+    unsigned char* dataOutput = output->data;
 
     // Ritaglio della regione centrale (senza padding) per ottenere un output h x w.
     for (int i = 0; i < h; i++) {
@@ -694,30 +642,39 @@ ByteImage* dilationByteImage(ByteImage* image, StructuringElementWithOffsets* SE
 
     free(dataPadded);
     free(dataDilated);
-    imageDilated->data = dataOutput;
-    return imageDilated;
+    return 0;
 }
 
-ByteImage* openingByteImage(ByteImage* image, StructuringElementWithOffsets* SE) {
-    ByteImage* eroded = erosionByteImage(image, SE);
-    if (eroded == NULL) return NULL;
-    ByteImage* result = dilationByteImage(eroded, SE);
-    freeByteImage(eroded);
-    return result;
+int openingByteImage(ByteImage* image, StructuringElementWithOffsets* SE, ByteImage* output, ByteImage* temp) {
+    if (temp == NULL || temp->data == NULL) {
+        fprintf(stderr, "Errore: buffer temporaneo non valido\n");
+        return -1;
+    }
+    if (erosionByteImage(image, SE, temp, NULL) != 0) return -1;
+    return dilationByteImage(temp, SE, output, NULL);
 }
 
-ByteImage* closingByteImage(ByteImage* image, StructuringElementWithOffsets* SE) {
-    ByteImage* dilated = dilationByteImage(image, SE);
-    if (dilated == NULL) return NULL;
-    ByteImage* result = erosionByteImage(dilated, SE);
-    freeByteImage(dilated);
-    return result;
+int closingByteImage(ByteImage* image, StructuringElementWithOffsets* SE, ByteImage* output, ByteImage* temp) {
+    if (temp == NULL || temp->data == NULL) {
+        fprintf(stderr, "Errore: buffer temporaneo non valido\n");
+        return -1;
+    }
+    if (dilationByteImage(image, SE, temp, NULL) != 0) return -1;
+    return erosionByteImage(temp, SE, output, NULL);
 }
 
-Uint64Image* erosionUint64Image(Uint64Image* image, StructuringElementWithOffsets* SE) {
+int erosionUint64Image(Uint64Image* image, StructuringElementWithOffsets* SE, Uint64Image* output, Uint64Image* temp) {
+    (void)temp;
     int w = image->width;
     int h = image->height;
     int rs = image->rowStride;
+
+    if (output == NULL || output->data == NULL) {
+        fprintf(stderr, "Errore: output non valido\n");
+        return -1;
+    }
+    uint64_t* dataEroded = output->data;
+    memset(dataEroded, 0, (size_t)rs * (size_t)h * sizeof(uint64_t));
 
     // Calcolo il padding necessario per evitare if nel ciclo interno
     int topPad = SE->originY;
@@ -732,7 +689,7 @@ Uint64Image* erosionUint64Image(Uint64Image* image, StructuringElementWithOffset
     uint64_t* dataPadded = (uint64_t*)calloc(paddedRs * paddedH, sizeof(uint64_t));
     if (!dataPadded) {
         fprintf(stderr, "Errore: impossibile allocare memoria per il padding\n");
-        return NULL;
+        return -1;
     }
 
     // Copio l'immagine originale nel centro del buffer padded
@@ -740,21 +697,6 @@ Uint64Image* erosionUint64Image(Uint64Image* image, StructuringElementWithOffset
         const uint64_t* src = image->data + i * rs;
         uint64_t* dst = dataPadded + (i + topPad) * paddedRs + leftPadInt64;
         memcpy(dst, src, rs * sizeof(uint64_t));
-    }
-
-    uint64_t* dataEroded = (uint64_t*)calloc(rs * h, sizeof(uint64_t));
-    if (!dataEroded) {
-        fprintf(stderr, "Errore: impossibile allocare memoria per i dati della nuova immagine\n");
-        free(dataPadded);
-        return NULL;
-    }
-
-    Uint64Image* imageEroded = createUint64Image(w, h, image->magicNumber);
-    if (!imageEroded) {
-        fprintf(stderr, "Errore: impossibile allocare memoria per la nuova immagine\n");
-        free(dataEroded);
-        free(dataPadded);
-        return NULL;
     }
 
     int n = SE->numOffsets;
@@ -767,10 +709,8 @@ Uint64Image* erosionUint64Image(Uint64Image* image, StructuringElementWithOffset
         free(dyRows);
         free(dxInt);
         free(dxBits);
-        free(dataEroded);
         free(dataPadded);
-        free(imageEroded);
-        return NULL;
+        return -1;
     }
 
     for (int k = 0; k < n; k++) {
@@ -816,15 +756,21 @@ Uint64Image* erosionUint64Image(Uint64Image* image, StructuringElementWithOffset
     free(dxInt);
     free(dxBits);
     free(dataPadded);
-    imageEroded->data = dataEroded;
 
-    return imageEroded;
+    return 0;
 } // erosionUint64Image
 
-Uint64Image* dilationUint64Image(Uint64Image* image, StructuringElementWithOffsets* SE) {
+int dilationUint64Image(Uint64Image* image, StructuringElementWithOffsets* SE, Uint64Image* output, Uint64Image* temp) {
+    (void)temp;
     int w = image->width;
     int h = image->height;
     int rs = image->rowStride;
+
+    if (output == NULL || output->data == NULL) {
+        fprintf(stderr, "Errore: output non valido\n");
+        return -1;
+    }
+    memset(output->data, 0, (size_t)rs * (size_t)h * sizeof(uint64_t));
 
     // Calcolo il padding per il buffer di output (dove "spargere" i pixel)
     int topPad = SE->originY;
@@ -839,7 +785,7 @@ Uint64Image* dilationUint64Image(Uint64Image* image, StructuringElementWithOffse
     uint64_t* dataDilated = (uint64_t*)calloc(paddedRs * paddedH, sizeof(uint64_t));
     if (!dataDilated) {
         fprintf(stderr, "Errore: impossibile allocare memoria per il buffer di output\n");
-        return NULL;
+        return -1;
     }
 
     // Buffer di input con padding
@@ -847,7 +793,7 @@ Uint64Image* dilationUint64Image(Uint64Image* image, StructuringElementWithOffse
     if (!dataPadded) {
         fprintf(stderr, "Errore: impossibile allocare memoria per il padding\n");
         free(dataDilated);
-        return NULL;
+        return -1;
     }
 
     // Copio l'immagine originale nel centro del buffer padded
@@ -855,14 +801,6 @@ Uint64Image* dilationUint64Image(Uint64Image* image, StructuringElementWithOffse
         const uint64_t* src = image->data + i * rs;
         uint64_t* dst = dataPadded + (i + topPad) * paddedRs + leftPadInt64;
         memcpy(dst, src, rs * sizeof(uint64_t));
-    }
-
-    Uint64Image* imageDilated = createUint64Image(w, h, image->magicNumber);
-    if (!imageDilated) {
-        fprintf(stderr, "Errore: impossibile allocare memoria per la nuova immagine\n");
-        free(dataDilated);
-        free(dataPadded);
-        return NULL;
     }
 
     int n = SE->numOffsets;
@@ -877,8 +815,7 @@ Uint64Image* dilationUint64Image(Uint64Image* image, StructuringElementWithOffse
         free(dxBits);
         free(dataDilated);
         free(dataPadded);
-        freeUint64Image(imageDilated);
-        return NULL;
+        return -1;
     }
 
     for (int k = 0; k < n; k++) {
@@ -926,14 +863,7 @@ Uint64Image* dilationUint64Image(Uint64Image* image, StructuringElementWithOffse
     free(dxBits);
     free(dataPadded);
 
-    // Estraggo la regione centrale (senza padding)
-    uint64_t* dataOutput = (uint64_t*)calloc(rs * h, sizeof(uint64_t));
-    if (!dataOutput) {
-        fprintf(stderr, "Errore: impossibile allocare memoria per l'output\n");
-        free(dataDilated);
-        freeUint64Image(imageDilated);
-        return NULL;
-    }
+    uint64_t* dataOutput = output->data;
 
     for (int i = 0; i < h; i++) {
         const uint64_t* src = dataDilated + (i + topPad) * paddedRs + leftPadInt64;
@@ -942,23 +872,24 @@ Uint64Image* dilationUint64Image(Uint64Image* image, StructuringElementWithOffse
     }
 
     free(dataDilated);
-    imageDilated->data = dataOutput;
 
-    return imageDilated;
+    return 0;
 } // dilationUint64Image
 
-Uint64Image* openingUint64Image(Uint64Image* image, StructuringElementWithOffsets* SE) {
-    Uint64Image* eroded = erosionUint64Image(image, SE);
-    if (eroded == NULL) return NULL;
-    Uint64Image* result = dilationUint64Image(eroded, SE);
-    freeUint64Image(eroded);
-    return result;
+int openingUint64Image(Uint64Image* image, StructuringElementWithOffsets* SE, Uint64Image* output, Uint64Image* temp) {
+    if (temp == NULL || temp->data == NULL) {
+        fprintf(stderr, "Errore: buffer temporaneo non valido\n");
+        return -1;
+    }
+    if (erosionUint64Image(image, SE, temp, NULL) != 0) return -1;
+    return dilationUint64Image(temp, SE, output, NULL);
 } // openingUint64Image
 
-Uint64Image* closingUint64Image(Uint64Image* image, StructuringElementWithOffsets* SE) {
-    Uint64Image* dilated = dilationUint64Image(image, SE);
-    if (dilated == NULL) return NULL;
-    Uint64Image* result = erosionUint64Image(dilated, SE);
-    freeUint64Image(dilated);
-    return result;
+int closingUint64Image(Uint64Image* image, StructuringElementWithOffsets* SE, Uint64Image* output, Uint64Image* temp) {
+    if (temp == NULL || temp->data == NULL) {
+        fprintf(stderr, "Errore: buffer temporaneo non valido\n");
+        return -1;
+    }
+    if (dilationUint64Image(image, SE, temp, NULL) != 0) return -1;
+    return erosionUint64Image(temp, SE, output, NULL);
 } // closingUint64Image
