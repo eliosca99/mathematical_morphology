@@ -122,12 +122,10 @@ int erosionWithOffsets (Image* image, StructuringElementWithOffsets* SE, Image* 
     int right = SE->width - SE->originX - 1;
 
     // calcolo gli offset lineari ora in modo da calcolarli una volta sola
-    int* linearOffsets = (int*)malloc(SE->numOffsets * sizeof(int));
-    if(!linearOffsets) {
-        fprintf(stderr, "Errore: impossibile allocare memoria per gli offset linearizzati\n");
-        return -1;
-    }
-    for(int i = 0; i < SE->numOffsets; i++) {
+    int n = SE->numOffsets;
+    int linearOffsets[n];
+
+    for(int i = 0; i < n; i++) {
         linearOffsets[i] = SE->offsets[i].dy * w + SE->offsets[i].dx;
     }
 
@@ -149,7 +147,6 @@ int erosionWithOffsets (Image* image, StructuringElementWithOffsets* SE, Image* 
             }
         }
 
-    free(linearOffsets);
     return 0;
 } //erosionWithOffsets
 
@@ -165,12 +162,9 @@ int dilationWithOffsets(Image* image, StructuringElementWithOffsets* SE, Image* 
     unsigned char* dataDilated = output->data;
     memset(dataDilated, 0, (size_t)w * (size_t)h * sizeof(unsigned char));
 
-    int* linearOffsets = (int*)malloc(SE->numOffsets * sizeof(int));
-    if(!linearOffsets) {
-        fprintf(stderr, "Errore: impossibile allocare memoria per gli offset linearizzati\n");
-        return -1;
-    }
-    for(int i = 0; i < SE->numOffsets; i++) {
+    int n = SE->numOffsets;
+    int linearOffsets[n];
+    for(int i = 0; i < n; i++) {
         linearOffsets[i] = SE->offsets[i].dy * w + SE->offsets[i].dx;
     }
 
@@ -242,7 +236,6 @@ int dilationWithOffsets(Image* image, StructuringElementWithOffsets* SE, Image* 
         }
     }
 
-    free(linearOffsets);
     return 0;
 } // dilationWithOffsets
 
@@ -416,16 +409,9 @@ int erosionByteImage(ByteImage* image, StructuringElementWithOffsets* SE, ByteIm
     // e quindi devo prendere il byte a sinistra del byte corrente per ottenere dx bit da tale byte. Altrimenti, i bit entranti nel byte a 
     // causa dello shift sarebbero tutti 0 e quindi non sarebbe corretto.
     int n = SE->numOffsets;
-    int* dyRows = (int*)malloc(n * sizeof(int));
-    int* dxBytes = (int*)malloc(n * sizeof(int));
-    int* dxBits = (int*)malloc(n * sizeof(int));
-    if (!dyRows || !dxBytes || !dxBits) {
-        fprintf(stderr, "Errore: impossibile allocare memoria per gli offset byte\n");
-        free(dyRows);
-        free(dxBytes);
-        free(dxBits);
-        return -1;
-    }
+    int dyRows[n];
+    int dxBytes[n];
+    int dxBits[n];
 
     for(int k = 0; k < n; k++) {
         int dy = SE->offsets[k].dy;
@@ -507,10 +493,6 @@ int erosionByteImage(ByteImage* image, StructuringElementWithOffsets* SE, ByteIm
         }
     }
 
-    free(dyRows);
-    free(dxBytes);
-    free(dxBits);
-
     return 0;
 }
 
@@ -530,16 +512,9 @@ int dilationByteImage(ByteImage* image, StructuringElementWithOffsets* SE, ByteI
 
     // calcolo gli offset linearizzati
     int n = SE->numOffsets;
-    int* dyRows = (int*)malloc(n * sizeof(int));
-    int* dxBytes = (int*)malloc(n * sizeof(int));
-    int* dxBits = (int*)malloc(n * sizeof(int));
-    if (!dyRows || !dxBytes || !dxBits) {
-        fprintf(stderr, "Errore: impossibile allocare memoria per gli offset byte\n");
-        free(dyRows);
-        free(dxBytes);
-        free(dxBits);
-        return -1;
-    }
+    int dyRows[n];
+    int dxBytes[n];
+    int dxBits[n];
 
     for (int k = 0; k < n; k++) {
         int dy = SE->offsets[k].dy;
@@ -579,10 +554,6 @@ int dilationByteImage(ByteImage* image, StructuringElementWithOffsets* SE, ByteI
         }
     }
 
-    free(dyRows);
-    free(dxBytes);
-    free(dxBits);
-
     return 0;
 }
 
@@ -618,17 +589,9 @@ int erosionUint64Image(Uint64Image* image, StructuringElementWithOffsets* SE, Ui
     uint64_t* dataEroded = output->data;
 
     int n = SE->numOffsets;
-    int *dyRows = (int*)malloc(n * sizeof(int));
-    int *dxInt = (int*)malloc(n * sizeof(int));
-    int *dxBits = (int*)malloc(n * sizeof(int));
-
-    if (!(dyRows && dxInt && dxBits)) {
-        fprintf(stderr, "Impossibile allocare memoria per gli offset\n");
-        free(dyRows);
-        free(dxInt);
-        free(dxBits);
-        return -1;
-    }
+    int dyRows[n];
+    int dxInt[n];
+    int dxBits[n];
 
     for (int k = 0; k < n; k++) {
         int dy = SE->offsets[k].dy;
@@ -671,10 +634,6 @@ int erosionUint64Image(Uint64Image* image, StructuringElementWithOffsets* SE, Ui
         }
     }
 
-    free(dyRows);
-    free(dxInt);
-    free(dxBits);
-
     return 0;
 } // erosionUint64Image
 
@@ -693,17 +652,9 @@ int dilationUint64Image(Uint64Image* image, StructuringElementWithOffsets* SE, U
     memset(dataOutput, 0, (size_t)rs * (size_t)h * sizeof(uint64_t));
 
     int n = SE->numOffsets;
-    int* dyRows = (int*)malloc(n * sizeof(int));
-    int* dxInt = (int*)malloc(n * sizeof(int));
-    int* dxBits = (int*)malloc(n * sizeof(int));
-
-    if (!(dyRows && dxInt && dxBits)) {
-        fprintf(stderr, "Impossibile allocare memoria per gli offset\n");
-        free(dyRows);
-        free(dxInt);
-        free(dxBits);
-        return -1;
-    }
+    int dyRows[n];
+    int dxInt[n];
+    int dxBits[n];
 
     for (int k = 0; k < n; k++) {
         int dy = SE->offsets[k].dy;
@@ -744,10 +695,6 @@ int dilationUint64Image(Uint64Image* image, StructuringElementWithOffsets* SE, U
             }
         }
     }
-
-    free(dyRows);
-    free(dxInt);
-    free(dxBits);
 
     return 0;
 } // dilationUint64Image
