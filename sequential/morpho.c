@@ -265,7 +265,6 @@ int closingWithOffsets(Image* image, StructuringElementWithOffsets* SE, Image* o
 } // closingWithOffsets
 
 int erosionSeparable(Image* image, int hSize, int vSize, Image* output, Image* tempOut) {
-    (void)tempOut;
     // Decomposizione separabile: un'erosione con box hSize x vSize equivale a
     // un'erosione orizzontale (linea 1 x hSize) seguita da un'erosione verticale (linea vSize x 1).
     // Complessità: O(n * m * (hSize + vSize)) invece di O(n * m * hSize * vSize).
@@ -274,7 +273,15 @@ int erosionSeparable(Image* image, int hSize, int vSize, Image* output, Image* t
     int w = image->width;
 
     // --- Passo 1: erosione orizzontale ---
-    unsigned char* temp = (unsigned char*)calloc(w * h, sizeof(unsigned char));
+    unsigned char* temp = NULL;
+    int locallyAllocated = 0;
+    if (tempOut != NULL && tempOut->data != NULL) {
+        temp = tempOut->data;
+        memset(temp, 0, (size_t)w * (size_t)h * sizeof(unsigned char));
+    } else {
+        temp = (unsigned char*)calloc(w * h, sizeof(unsigned char));
+        locallyAllocated = 1;
+    }
     if (!temp) {
         fprintf(stderr, "Errore: impossibile allocare memoria per il buffer temporaneo\n");
         return -1;
@@ -324,13 +331,14 @@ int erosionSeparable(Image* image, int hSize, int vSize, Image* output, Image* t
         }
     }
 
-    free(temp);
+    if (locallyAllocated) {
+        free(temp);
+    }
 
     return 0;
 } // erosionSeparable
 
 int dilationSeparable(Image* image, int hSize, int vSize, Image* output, Image* tempOut) {
-    (void)tempOut;
     // Decomposizione separabile: una dilatazione con box hSize x vSize equivale a
     // una dilatazione orizzontale (linea 1 x hSize) seguita da una dilatazione verticale (linea vSize x 1).
 
@@ -338,7 +346,15 @@ int dilationSeparable(Image* image, int hSize, int vSize, Image* output, Image* 
     int w = image->width;
 
     // --- Passo 1: dilatazione orizzontale ---
-    unsigned char* temp = (unsigned char*)calloc(w * h, sizeof(unsigned char));
+    unsigned char* temp = NULL;
+    int locallyAllocated = 0;
+    if (tempOut != NULL && tempOut->data != NULL) {
+        temp = tempOut->data;
+        memset(temp, 0, (size_t)w * (size_t)h * sizeof(unsigned char));
+    } else {
+        temp = (unsigned char*)calloc(w * h, sizeof(unsigned char));
+        locallyAllocated = 1;
+    }
     if (!temp) {
         fprintf(stderr, "Errore: impossibile allocare memoria per il buffer temporaneo\n");
         return -1;
@@ -387,7 +403,9 @@ int dilationSeparable(Image* image, int hSize, int vSize, Image* output, Image* 
         }
     }
 
-    free(temp);
+    if (locallyAllocated) {
+        free(temp);
+    }
 
     return 0;
 } // dilationSeparable
@@ -543,42 +561,13 @@ int dilationByteImage(ByteImage* image, StructuringElementWithOffsets* SE, ByteI
     int w = image->width;
     int rs = image->rowStride;
 
-    // definisco il padding per l'immagine di output
-    int topPadding = SE->originY;    
-    int bottomPadding = SE->height - SE->originY - 1;
-    int leftPaddingBytes = (SE->originX + 7) / 8;
-    int rightPaddingBytes = ((SE->width - SE->originX - 1) / 8) + 1;
-
-    int newH = h + topPadding + bottomPadding;
-    int newRs = rs + leftPaddingBytes + rightPaddingBytes;
-
     if (output == NULL || output->data == NULL) {
         fprintf(stderr, "Errore: output non valido\n");
         return -1;
     }
-    memset(output->data, 0, (size_t)rs * (size_t)h * sizeof(unsigned char));
-
-    unsigned char* dataDilated = (unsigned char*)calloc(newRs * newH, sizeof(unsigned char));
-    if (!dataDilated) {
-        fprintf(stderr, "Errore: impossibile allocare memoria per i dati della nuova immagine\n");
-        return -1;
-    }
-
-    // alloco l'immagine di input con padding 
-    unsigned char* dataPadded = (unsigned char*)calloc(newRs * newH, sizeof(unsigned char));
-     if (!dataPadded) {
-        fprintf(stderr, "Errore: impossibile allocare memoria per i dati della nuova immagine\n");
-        free(dataDilated);
-        return -1;
-    }
-
-    for(int i = topPadding; i < newH - bottomPadding; i++) {
-        const unsigned char* src = image->data + (i - topPadding) * rs;
-        unsigned char* dst = dataPadded + (i * newRs) + leftPaddingBytes;
-        memcpy(dst, src, (size_t)rs);
-    }
-
-
+    
+    unsigned char* dataOutput = output->data;
+    memset(dataOutput, 0, (size_t)rs * (size_t)h * sizeof(unsigned char));
 
     // calcolo gli offset linearizzati
     int n = SE->numOffsets;
@@ -590,8 +579,6 @@ int dilationByteImage(ByteImage* image, StructuringElementWithOffsets* SE, ByteI
         free(dyRows);
         free(dxBytes);
         free(dxBits);
-        free(dataPadded);
-        free(dataDilated);
         return -1;
     }
 
@@ -599,7 +586,7 @@ int dilationByteImage(ByteImage* image, StructuringElementWithOffsets* SE, ByteI
         int dy = SE->offsets[k].dy;
         int dx = SE->offsets[k].dx;
 
-        dyRows[k] = dy * newRs;
+        dyRows[k] = dy;
         
         if (dx >= 0) {
             dxBytes[k] = dx / 8;
@@ -610,19 +597,25 @@ int dilationByteImage(ByteImage* image, StructuringElementWithOffsets* SE, ByteI
         }
     }
 
-    
-
-    for (int i = topPadding; i < newH - bottomPadding; i++) {
-        for (int j = leftPaddingBytes; j < newRs - rightPaddingBytes; j++) {
-            unsigned char srcByte = dataPadded[i * newRs + j];
-            int dstIdx = i * newRs + j;
+    for (int i = 0; i < h; i++) {
+        for (int j = 0; j < rs; j++) {
+            unsigned char srcByte = image->data[i * rs + j];
             if (srcByte == 0)
                 continue;
 
             for (int k = 0; k < n; k++) {
-
-                dataDilated[dstIdx + dyRows[k] + dxBytes[k]] |= srcByte >> dxBits[k];
-                dataDilated[dstIdx + dyRows[k] + dxBytes[k] + !!dxBits[k]] |= srcByte << ((8 - dxBits[k]) & 7);
+                int destRow = i + dyRows[k];
+                if (destRow >= 0 && destRow < h) {
+                    int destByte = j + dxBytes[k];
+                    int shift = dxBits[k];
+                    
+                    if (destByte >= 0 && destByte < rs) {
+                        dataOutput[destRow * rs + destByte] |= (srcByte >> shift);
+                    }
+                    if (shift && destByte + 1 >= 0 && destByte + 1 < rs) {
+                        dataOutput[destRow * rs + destByte + 1] |= (srcByte << ((8 - shift) & 7));
+                    }
+                }
             }
         }
     }
@@ -631,17 +624,6 @@ int dilationByteImage(ByteImage* image, StructuringElementWithOffsets* SE, ByteI
     free(dxBytes);
     free(dxBits);
 
-    unsigned char* dataOutput = output->data;
-
-    // Ritaglio della regione centrale (senza padding) per ottenere un output h x w.
-    for (int i = 0; i < h; i++) {
-        const unsigned char* src = dataDilated + (i + topPadding) * newRs + leftPaddingBytes;
-        unsigned char* dst = dataOutput + i * rs;
-        memcpy(dst, src, (size_t)rs);
-    }
-
-    free(dataPadded);
-    free(dataDilated);
     return 0;
 }
 
@@ -673,31 +655,8 @@ int erosionUint64Image(Uint64Image* image, StructuringElementWithOffsets* SE, Ui
         fprintf(stderr, "Errore: output non valido\n");
         return -1;
     }
+    
     uint64_t* dataEroded = output->data;
-    memset(dataEroded, 0, (size_t)rs * (size_t)h * sizeof(uint64_t));
-
-    // Calcolo il padding necessario per evitare if nel ciclo interno
-    int topPad = SE->originY;
-    int bottomPad = SE->height - SE->originY - 1;
-    int leftPadInt64 = (SE->originX + 63) / 64 + 1;  // +1 per il wordB
-    int rightPadInt64 = ((SE->width - SE->originX - 1) + 63) / 64 + 1;
-
-    int paddedH = h + topPad + bottomPad;
-    int paddedRs = rs + leftPadInt64 + rightPadInt64;
-
-    // Alloco l'immagine padded (inizializzata a 0 = padding virtuale)
-    uint64_t* dataPadded = (uint64_t*)calloc(paddedRs * paddedH, sizeof(uint64_t));
-    if (!dataPadded) {
-        fprintf(stderr, "Errore: impossibile allocare memoria per il padding\n");
-        return -1;
-    }
-
-    // Copio l'immagine originale nel centro del buffer padded
-    for (int i = 0; i < h; i++) {
-        const uint64_t* src = image->data + i * rs;
-        uint64_t* dst = dataPadded + (i + topPad) * paddedRs + leftPadInt64;
-        memcpy(dst, src, rs * sizeof(uint64_t));
-    }
 
     int n = SE->numOffsets;
     int *dyRows = (int*)malloc(n * sizeof(int));
@@ -709,7 +668,6 @@ int erosionUint64Image(Uint64Image* image, StructuringElementWithOffsets* SE, Ui
         free(dyRows);
         free(dxInt);
         free(dxBits);
-        free(dataPadded);
         return -1;
     }
 
@@ -717,7 +675,7 @@ int erosionUint64Image(Uint64Image* image, StructuringElementWithOffsets* SE, Ui
         int dy = SE->offsets[k].dy;
         int dx = SE->offsets[k].dx;
 
-        dyRows[k] = paddedRs * dy;
+        dyRows[k] = dy;
 
         if (dx >= 0) {
             dxInt[k] = dx / 64;
@@ -729,33 +687,34 @@ int erosionUint64Image(Uint64Image* image, StructuringElementWithOffsets* SE, Ui
     }
 
     for (int i = 0; i < h; i++) {
-        int srcRowBase = (i + topPad) * paddedRs + leftPadInt64;
-        int dstRowBase = i * rs;
-
         for (int j = 0; j < rs; j++) {
             uint64_t acc = UINT64_MAX;
 
             for (int k = 0; k < n; k++) {
-                int srcIdx = srcRowBase + dyRows[k] + j + dxInt[k];
-                uint64_t wordA = dataPadded[srcIdx];
-                uint64_t wordB = dataPadded[srcIdx + 1];
+                int srcRow = i + dyRows[k];
+                if (srcRow >= 0 && srcRow < h) {
+                    int srcWord = j + dxInt[k];
+                    int shift = dxBits[k];
+                    
+                    uint64_t wordA = (srcWord >= 0 && srcWord < rs) ? image->data[srcRow * rs + srcWord] : 0ULL;
+                    uint64_t wordB = (srcWord + 1 >= 0 && srcWord + 1 < rs) ? image->data[srcRow * rs + srcWord + 1] : 0ULL;
 
-                int shift = dxBits[k];
-                // Mask per azzerare il contributo di wordB quando shift == 0
-                uint64_t mask = -(uint64_t)(shift != 0);
-                uint64_t val = (wordA << shift) | ((wordB >> ((64 - shift) & 63)) & mask);
+                    uint64_t mask = -(uint64_t)(shift != 0);
+                    uint64_t val = (wordA << shift) | ((wordB >> ((64 - shift) & 63)) & mask);
+                    acc &= val;
+                } else {
+                    acc = 0ULL; // Se si sforza all'esterno, essendo un padding a 0, l'erosione vale 0.
+                }
 
-                acc &= val;
                 if (acc == 0) break;
             }
-            dataEroded[dstRowBase + j] = acc;
+            dataEroded[i * rs + j] = acc;
         }
     }
 
     free(dyRows);
     free(dxInt);
     free(dxBits);
-    free(dataPadded);
 
     return 0;
 } // erosionUint64Image
@@ -770,38 +729,9 @@ int dilationUint64Image(Uint64Image* image, StructuringElementWithOffsets* SE, U
         fprintf(stderr, "Errore: output non valido\n");
         return -1;
     }
-    memset(output->data, 0, (size_t)rs * (size_t)h * sizeof(uint64_t));
-
-    // Calcolo il padding per il buffer di output (dove "spargere" i pixel)
-    int topPad = SE->originY;
-    int bottomPad = SE->height - SE->originY - 1;
-    int leftPadInt64 = (SE->originX + 63) / 64 + 1;
-    int rightPadInt64 = ((SE->width - SE->originX - 1) + 63) / 64 + 1;
-
-    int paddedH = h + topPad + bottomPad;
-    int paddedRs = rs + leftPadInt64 + rightPadInt64;
-
-    // Buffer di output con padding (inizializzato a 0)
-    uint64_t* dataDilated = (uint64_t*)calloc(paddedRs * paddedH, sizeof(uint64_t));
-    if (!dataDilated) {
-        fprintf(stderr, "Errore: impossibile allocare memoria per il buffer di output\n");
-        return -1;
-    }
-
-    // Buffer di input con padding
-    uint64_t* dataPadded = (uint64_t*)calloc(paddedRs * paddedH, sizeof(uint64_t));
-    if (!dataPadded) {
-        fprintf(stderr, "Errore: impossibile allocare memoria per il padding\n");
-        free(dataDilated);
-        return -1;
-    }
-
-    // Copio l'immagine originale nel centro del buffer padded
-    for (int i = 0; i < h; i++) {
-        const uint64_t* src = image->data + i * rs;
-        uint64_t* dst = dataPadded + (i + topPad) * paddedRs + leftPadInt64;
-        memcpy(dst, src, rs * sizeof(uint64_t));
-    }
+    
+    uint64_t* dataOutput = output->data;
+    memset(dataOutput, 0, (size_t)rs * (size_t)h * sizeof(uint64_t));
 
     int n = SE->numOffsets;
     int* dyRows = (int*)malloc(n * sizeof(int));
@@ -813,8 +743,6 @@ int dilationUint64Image(Uint64Image* image, StructuringElementWithOffsets* SE, U
         free(dyRows);
         free(dxInt);
         free(dxBits);
-        free(dataDilated);
-        free(dataPadded);
         return -1;
     }
 
@@ -822,7 +750,7 @@ int dilationUint64Image(Uint64Image* image, StructuringElementWithOffsets* SE, U
         int dy = SE->offsets[k].dy;
         int dx = SE->offsets[k].dx;
 
-        dyRows[k] = paddedRs * dy;
+        dyRows[k] = dy;
 
         if (dx >= 0) {
             dxInt[k] = dx / 64;
@@ -833,27 +761,27 @@ int dilationUint64Image(Uint64Image* image, StructuringElementWithOffsets* SE, U
         }
     }
 
-    // Per ogni word sorgente, "spargo" i bit nelle posizioni dell'SE
     for (int i = 0; i < h; i++) {
-        int srcRowBase = (i + topPad) * paddedRs + leftPadInt64;
-
         for (int j = 0; j < rs; j++) {
-            uint64_t srcWord = dataPadded[srcRowBase + j];
+            uint64_t srcWord = image->data[i * rs + j];
             if (srcWord == 0)
                 continue;
 
-            int dstIdx = srcRowBase + j;
-
             for (int k = 0; k < n; k++) {
-                int shift = dxBits[k];
-                int targetIdx = dstIdx + dyRows[k] + dxInt[k];
+                int destRow = i + dyRows[k];
+                if (destRow >= 0 && destRow < h) {
+                    int destWord = j + dxInt[k];
+                    int shift = dxBits[k];
 
-                // Spargo i bit: shift a destra per il word corrente, shift a sinistra per il successivo
-                dataDilated[targetIdx] |= srcWord >> shift;
-
-                // Contributo al word successivo (solo se shift > 0)
-                uint64_t mask = -(uint64_t)(shift != 0);
-                dataDilated[targetIdx + 1] |= (srcWord << ((64 - shift) & 63)) & mask;
+                    if (destWord >= 0 && destWord < rs) {
+                        dataOutput[destRow * rs + destWord] |= (srcWord >> shift);
+                    }
+                    
+                    uint64_t mask = -(uint64_t)(shift != 0);
+                    if (shift && destWord + 1 >= 0 && destWord + 1 < rs) {
+                        dataOutput[destRow * rs + destWord + 1] |= (srcWord << ((64 - shift) & 63)) & mask;
+                    }
+                }
             }
         }
     }
@@ -861,17 +789,6 @@ int dilationUint64Image(Uint64Image* image, StructuringElementWithOffsets* SE, U
     free(dyRows);
     free(dxInt);
     free(dxBits);
-    free(dataPadded);
-
-    uint64_t* dataOutput = output->data;
-
-    for (int i = 0; i < h; i++) {
-        const uint64_t* src = dataDilated + (i + topPad) * paddedRs + leftPadInt64;
-        uint64_t* dst = dataOutput + i * rs;
-        memcpy(dst, src, rs * sizeof(uint64_t));
-    }
-
-    free(dataDilated);
 
     return 0;
 } // dilationUint64Image
