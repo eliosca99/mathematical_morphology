@@ -157,6 +157,10 @@ static double benchmarkBase(Image* image, StructuringElement* se, BaseOp op, int
 
     Image* out = allocateImageBufferLike(image);
     Image* tmp = allocateImageBufferLike(image);
+    if (tmp && tmp->data) {
+        free(tmp->data);
+        tmp->data = (unsigned char*)calloc(2 * (size_t)image->width * (size_t)image->height, sizeof(unsigned char));
+    }
     if (!out || !tmp) {
         freeImage(out);
         freeImage(tmp);
@@ -193,6 +197,10 @@ static double benchmarkOffset(Image* image, StructuringElementWithOffsets* se, O
 
     Image* out = allocateImageBufferLike(image);
     Image* tmp = allocateImageBufferLike(image);
+    if (tmp && tmp->data) {
+        free(tmp->data);
+        tmp->data = (unsigned char*)calloc(2 * (size_t)image->width * (size_t)image->height, sizeof(unsigned char));
+    }
     if (!out || !tmp) {
         freeImage(out);
         freeImage(tmp);
@@ -229,6 +237,10 @@ static double benchmarkSeparable(Image* image, int size, SeparableOp op, int run
 
     Image* out = allocateImageBufferLike(image);
     Image* tmp = allocateImageBufferLike(image);
+    if (tmp && tmp->data) {
+        free(tmp->data);
+        tmp->data = (unsigned char*)calloc(2 * (size_t)image->width * (size_t)image->height, sizeof(unsigned char));
+    }
     if (!out || !tmp) {
         freeImage(out);
         freeImage(tmp);
@@ -457,6 +469,10 @@ static int runParallelClosingUint64Image(Uint64Image* image, StructuringElementW
 static int saveOperationImages(Image* image, StructuringElement* se, StructuringElementWithOffsets* seOff, ByteImage* byteImage, Uint64Image* uint64Image, const char* outputDir, const OperationSpec* ops, int numOps, int seSize) {
     Image* out = allocateImageBufferLike(image);
     Image* tmp = allocateImageBufferLike(image);
+    if (tmp && tmp->data) {
+        free(tmp->data);
+        tmp->data = (unsigned char*)calloc(2 * (size_t)image->width * (size_t)image->height, sizeof(unsigned char));
+    }
     ByteImage* outByte = byteImage ? allocateByteImageBufferLike(byteImage) : NULL;
     ByteImage* tmpByte = byteImage ? allocateByteImageBufferLike(byteImage) : NULL;
     Uint64Image* outUint64 = uint64Image ? allocateUint64ImageBufferLike(uint64Image) : NULL;

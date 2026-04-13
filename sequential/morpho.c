@@ -367,8 +367,12 @@ int openingSeparable(Image* image, int hSize, int vSize, Image* output, Image* t
         fprintf(stderr, "Errore: buffer temporaneo non valido\n");
         return -1;
     }
-    if (erosionSeparable(image, hSize, vSize, temp, NULL) != 0) return -1;
-    return dilationSeparable(temp, hSize, vSize, output, NULL);
+    
+    Image tempScratch = *temp;
+    tempScratch.data = temp->data + (size_t)temp->width * temp->height;
+
+    if (erosionSeparable(image, hSize, vSize, temp, &tempScratch) != 0) return -1;
+    return dilationSeparable(temp, hSize, vSize, output, &tempScratch);
 } // openingSeparable
 
 int closingSeparable(Image* image, int hSize, int vSize, Image* output, Image* temp) {
@@ -376,8 +380,12 @@ int closingSeparable(Image* image, int hSize, int vSize, Image* output, Image* t
         fprintf(stderr, "Errore: buffer temporaneo non valido\n");
         return -1;
     }
-    if (dilationSeparable(image, hSize, vSize, temp, NULL) != 0) return -1;
-    return erosionSeparable(temp, hSize, vSize, output, NULL);
+    
+    Image tempScratch = *temp;
+    tempScratch.data = temp->data + (size_t)temp->width * temp->height;
+
+    if (dilationSeparable(image, hSize, vSize, temp, &tempScratch) != 0) return -1;
+    return erosionSeparable(temp, hSize, vSize, output, &tempScratch);
 } // closingSeparable
 
 int erosionByteImage(ByteImage* image, StructuringElementWithOffsets* SE, ByteImage* output, ByteImage* temp) {
