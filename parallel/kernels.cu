@@ -359,6 +359,169 @@ __global__ void dilationByteImageKernel(
     d_out[row * rowStride + byteX] = acc;
 }
 
+__global__ void erosionUint64ImageKernel(
+    const uint64_t* __restrict__ d_in,
+    uint64_t*       __restrict__ d_out,
+    int width,
+    int height,
+    int rowStride,
+    int numOffsets,
+    int top,
+    int bottom,
+    int left,
+    int right
+) {
+    int wordX = blockIdx.x * blockDim.x + threadIdx.x;
+    int row   = blockIdx.y * blockDim.y + threadIdx.y;
+
+    int tid        = threadIdx.y * blockDim.x + threadIdx.x;
+    int numThreads = blockDim.x * blockDim.y;
+
+    int leftHaloWords  = (left + 63) / 64;
+    int rightHaloWords = right / 64;
+
+    int tile_word_w = leftHaloWords + blockDim.x + rightHaloWords + 1;
+    int tile_h      = top + blockDim.y + bottom;
+    int shared_size = tile_word_w * tile_h;
+
+    int tile_start_wordX = blockIdx.x * blockDim.x - leftHaloWords;
+    int tile_start_row   = blockIdx.y * blockDim.y - top;
+
+    extern __shared__ uint64_t s_tile_uint64[];
+
+    for (int t = tid; t < shared_size; t += numThreads) {
+        int s_x = t % tile_word_w;
+        int s_y = t / tile_word_w;
+        int g_x = tile_start_wordX + s_x;
+        int g_y = tile_start_row   + s_y;
+
+        if (g_x >= 0 && g_x < rowStride && g_y >= 0 && g_y < height)
+            s_tile_uint64[t] = d_in[g_y * rowStride + g_x];
+        else
+            s_tile_uint64[t] = 0ULL;
+    }
+
+    __syncthreads();
+
+    if (wordX >= rowStride || row >= height) return;
+
+    int local_row  = threadIdx.y + top;
+    int local_wordX = threadIdx.x + leftHaloWords;
+
+    uint64_t acc = UINT64_MAX;
+
+    for (int k = 0; k < numOffsets; k++) {
+        int dx = d_se[k].x;
+        int dy = d_se[k].y;
+
+        int dxInt, dxBits;
+        if (dx >= 0) {
+            dxInt  = dx / 64;
+            dxBits = dx % 64;
+        } else {
+            dxInt  = (dx - 63) / 64;
+            dxBits = dx - dxInt * 64;
+        }
+
+        int s_y = local_row   + dy;
+        int s_x = local_wordX + dxInt;
+
+        uint64_t wordA = s_tile_uint64[s_y * tile_word_w + s_x];
+        uint64_t wordB = s_tile_uint64[s_y * tile_word_w + s_x + 1];
+
+        uint64_t mask = -(uint64_t)(dxBits != 0);
+        uint64_t val  = (wordA << dxBits) | ((wordB >> ((64 - dxBits) & 63)) & mask);
+
+        acc &= val;
+        if (acc == 0ULL) break;
+    }
+
+    d_out[row * rowStride + wordX] = acc;
+}
+
+__global__ void dilationUint64ImageKernel(
+    const uint64_t* __restrict__ d_in,
+    uint64_t*       __restrict__ d_out,
+    int width,
+    int height,
+    int rowStride,
+    int numOffsets,
+    int top,
+    int bottom,
+    int left,
+    int right
+) {
+    int wordX = blockIdx.x * blockDim.x + threadIdx.x;
+    int row   = blockIdx.y * blockDim.y + threadIdx.y;
+
+    int tid        = threadIdx.y * blockDim.x + threadIdx.x;
+    int numThreads = blockDim.x * blockDim.y;
+
+    // halo invertito rispetto all'erosione
+    int leftHaloWords  = right / 64 + 1;
+    int rightHaloWords = (left + 63) / 64;
+
+    int tile_word_w = leftHaloWords + blockDim.x + rightHaloWords;
+    int tile_h      = bottom + blockDim.y + top;
+    int shared_size = tile_word_w * tile_h;
+
+    int tile_start_wordX = blockIdx.x * blockDim.x - leftHaloWords;
+    int tile_start_row   = blockIdx.y * blockDim.y - bottom;
+
+    extern __shared__ uint64_t s_tile_uint64_dil[];
+
+    for (int t = tid; t < shared_size; t += numThreads) {
+        int s_x = t % tile_word_w;
+        int s_y = t / tile_word_w;
+        int g_x = tile_start_wordX + s_x;
+        int g_y = tile_start_row   + s_y;
+
+        if (g_x >= 0 && g_x < rowStride && g_y >= 0 && g_y < height)
+            s_tile_uint64_dil[t] = d_in[g_y * rowStride + g_x];
+        else
+            s_tile_uint64_dil[t] = 0ULL;
+    }
+
+    __syncthreads();
+
+    if (wordX >= rowStride || row >= height) return;
+
+    int local_row   = threadIdx.y + bottom;
+    int local_wordX = threadIdx.x + leftHaloWords;
+
+    uint64_t acc = 0ULL;
+
+    for (int k = 0; k < numOffsets; k++) {
+        int dx = d_se[k].x;
+        int dy = d_se[k].y;
+
+        int dxInt, dxBits;
+        if (dx >= 0) {
+            dxInt  = dx / 64;
+            dxBits = dx % 64;
+        } else {
+            dxInt  = (dx - 63) / 64;
+            dxBits = dx - dxInt * 64;
+        }
+
+        // direzione opposta: - invece di +
+        int s_y = local_row   - dy;
+        int s_x = local_wordX - dxInt;
+
+        uint64_t wordA = s_tile_uint64_dil[s_y * tile_word_w + s_x];
+        // wordB sta a SINISTRA di wordA per la dilatazione
+        uint64_t wordB = s_tile_uint64_dil[s_y * tile_word_w + s_x - 1];
+
+        uint64_t mask = -(uint64_t)(dxBits != 0);
+        uint64_t val  = (wordA >> dxBits) | ((wordB << ((64 - dxBits) & 63)) & mask);
+
+        acc |= val;
+        if (acc == UINT64_MAX) break;
+    }
+
+    d_out[row * rowStride + wordX] = acc;
+}
+
 void copy_se_to_constant(StructuringElementWithOffsets* SE) {
     int2 offsets[SE->numOffsets];
     for (int i = 0; i < SE->numOffsets; i++) {

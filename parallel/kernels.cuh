@@ -77,21 +77,29 @@ __global__ void dilationByteImageKernel(
 );
 
 __global__ void erosionUint64ImageKernel(
-    const unsigned char* __restrict__ d_in,
-    unsigned char* __restrict__ d_out,
+    const uint64_t* __restrict__ d_in,
+    uint64_t*       __restrict__ d_out,
     int width,
     int height,
-    const int2* __restrict__ d_offset,
-    int numOffsets
+    int rowStride,
+    int numOffsets,
+    int top,
+    int bottom,
+    int left,
+    int right
 );
 
 __global__ void dilationUint64ImageKernel(
-    const unsigned char* __restrict__ d_in,
-    unsigned char* __restrict__ d_out,
+    const uint64_t* __restrict__ d_in,
+    uint64_t*       __restrict__ d_out,
     int width,
     int height,
-    const int2* __restrict__ d_offset,
-    int numOffsets
+    int rowStride,
+    int numOffsets,
+    int top,
+    int bottom,
+    int left,
+    int right
 );
 
 void copy_se_to_constant(StructuringElementWithOffsets* SE);

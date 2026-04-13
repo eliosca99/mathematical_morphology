@@ -397,6 +397,27 @@ static int runParallelClosingByteImage(ByteImage* image, StructuringElementWithO
     return closingByteImageCuda(image, se, output, 32, 32);
 }
 
+static int runParallelErosionUint64Image(Uint64Image* image, StructuringElementWithOffsets* se, Uint64Image* output, Uint64Image* temp) {
+    (void)temp;
+    // Uso blocchi 32x8 o simili. 32x2 era per un rapido check
+    return erosionUint64ImageCuda(image, se, output, 32, 8);
+}
+
+static int runParallelDilationUint64Image(Uint64Image* image, StructuringElementWithOffsets* se, Uint64Image* output, Uint64Image* temp) {
+    (void)temp;
+    return dilationUint64ImageCuda(image, se, output, 32, 8);
+}
+
+static int runParallelOpeningUint64Image(Uint64Image* image, StructuringElementWithOffsets* se, Uint64Image* output, Uint64Image* temp) {
+    (void)temp;
+    return openingUint64ImageCuda(image, se, output, 32, 8);
+}
+
+static int runParallelClosingUint64Image(Uint64Image* image, StructuringElementWithOffsets* se, Uint64Image* output, Uint64Image* temp) {
+    (void)temp;
+    return closingUint64ImageCuda(image, se, output, 32, 8);
+}
+
 static int saveOperationImages(Image* image, StructuringElement* se, StructuringElementWithOffsets* seOff, ByteImage* byteImage, Uint64Image* uint64Image, const char* outputDir, const OperationSpec* ops, int numOps, int seSize) {
     Image* out = allocateImageBufferLike(image);
     Image* tmp = allocateImageBufferLike(image);
@@ -452,6 +473,12 @@ static int saveOperationImages(Image* image, StructuringElement* se, Structuring
         if (byteImage && outByte && tmpByte) {
             snprintf(path, sizeof(path), "%s/%s_cuda_byte.pbm", outputDir, ops[i].name);
             if (ops[i].parallelByteOffset(byteImage, seOff, outByte, tmpByte) == 0) saveByteImage(path, outByte);
+        }
+
+        // Cuda Uint64
+        if (uint64Image && outUint64 && tmpUint64) {
+            snprintf(path, sizeof(path), "%s/%s_cuda_uint64.pbm", outputDir, ops[i].name);
+            if (ops[i].parallelUint64Offset(uint64Image, seOff, outUint64, tmpUint64) == 0) saveUint64Image(path, outUint64);
         }
     }
 
@@ -539,10 +566,10 @@ int main(int argc, char* argv[]) {
     }
 
     OperationSpec ops[] = {
-        {"erosion",  erosion,  erosionWithOffsets,  erosionSeparable,  erosionByteImage,  erosionUint64Image,  runParallelErosion, runParallelErosionNaive, runParallelErosionByteImage, parallelNotImplementedUint64, "erosion.pbm"},
-        {"dilation", dilation, dilationWithOffsets, dilationSeparable, dilationByteImage, dilationUint64Image, runParallelDilation, runParallelDilationNaive, runParallelDilationByteImage, parallelNotImplementedUint64, "dilation.pbm"},
-        {"opening",  opening,  openingWithOffsets,  openingSeparable,  openingByteImage,  openingUint64Image,  runParallelOpening, runParallelOpeningNaive, runParallelOpeningByteImage, parallelNotImplementedUint64, "opening.pbm"},
-        {"closing",  closing,  closingWithOffsets,  closingSeparable,  closingByteImage,  closingUint64Image,  runParallelClosing, runParallelClosingNaive, runParallelClosingByteImage, parallelNotImplementedUint64, "closing.pbm"}
+        {"erosion",  erosion,  erosionWithOffsets,  erosionSeparable,  erosionByteImage,  erosionUint64Image,  runParallelErosion, runParallelErosionNaive, runParallelErosionByteImage, runParallelErosionUint64Image, "erosion.pbm"},
+        {"dilation", dilation, dilationWithOffsets, dilationSeparable, dilationByteImage, dilationUint64Image, runParallelDilation, runParallelDilationNaive, runParallelDilationByteImage, runParallelDilationUint64Image, "dilation.pbm"},
+        {"opening",  opening,  openingWithOffsets,  openingSeparable,  openingByteImage,  openingUint64Image,  runParallelOpening, runParallelOpeningNaive, runParallelOpeningByteImage, runParallelOpeningUint64Image, "opening.pbm"},
+        {"closing",  closing,  closingWithOffsets,  closingSeparable,  closingByteImage,  closingUint64Image,  runParallelClosing, runParallelClosingNaive, runParallelClosingByteImage, runParallelClosingUint64Image, "closing.pbm"}
     };
     int numOps = (int)(sizeof(ops) / sizeof(ops[0]));
 
@@ -697,7 +724,7 @@ int main(int argc, char* argv[]) {
                     inputPath);
 
                 if (shape == SE_SHAPE_BOX) {
-                    printf("%s -> base: %.3f ms | offset: %.3f ms | separabile: %s ms | byte: %s ms | uint64: %s ms | cuda_offset: %s ms | cuda_naive: %s ms | cuda_byte: %s ms\n",
+                    printf("%s -> base: %.3f ms | offset: %.3f ms | separabile: %s ms | byte: %s ms | uint64: %s ms | cuda_offset: %s ms | cuda_naive: %s ms | cuda_byte: %s ms | cuda_uint64: %s ms\n",
                         ops[i].name,
                         baseMs,
                         offsetMs,
@@ -706,9 +733,10 @@ int main(int argc, char* argv[]) {
                         uint64MsField,
                         parallelOffsetMsField,
                         parallelNaiveMsField,
-                        parallelByteMsField);
+                        parallelByteMsField,
+                        parallelUint64MsField);
                 } else {
-                    printf("%s -> base: %.3f ms | offset: %.3f ms | separabile: NA | byte: %s ms | uint64: %s ms | cuda_offset: %s ms | cuda_naive: %s ms | cuda_byte: %s ms\n",
+                    printf("%s -> base: %.3f ms | offset: %.3f ms | separabile: NA | byte: %s ms | uint64: %s ms | cuda_offset: %s ms | cuda_naive: %s ms | cuda_byte: %s ms | cuda_uint64: %s ms\n",
                         ops[i].name,
                         baseMs,
                         offsetMs,
@@ -716,7 +744,8 @@ int main(int argc, char* argv[]) {
                         uint64MsField,
                         parallelOffsetMsField,
                         parallelNaiveMsField,
-                        parallelByteMsField);
+                        parallelByteMsField,
+                        parallelUint64MsField);
                 }
             }
 

@@ -40,7 +40,7 @@ for op in erosion dilation opening closing; do
         continue
     fi
 
-    for method in offset separable byte uint64 cuda_offset cuda_naive cuda_byte; do
+    for method in offset separable byte uint64 cuda_offset cuda_naive cuda_byte cuda_uint64; do
         COMPARE_FILE="$OUT_DIR/${op}_${method}.pbm"
         
         if [ ! -f "$COMPARE_FILE" ]; then

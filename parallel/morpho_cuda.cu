@@ -579,3 +579,163 @@ int closingByteImageCuda(ByteImage* image, StructuringElementWithOffsets* SE, By
     freeByteImage(temp);
     return 0;
 }
+
+int erosionUint64ImageCuda(Uint64Image* image, StructuringElementWithOffsets* SE, Uint64Image* output, int block_dim_x, int block_dim_y) {
+    if (!image || !image->data || !SE || !output || !output->data) {
+        fprintf(stderr, "Parametri non validi\n");
+        return -1;
+    }
+
+    int width      = image->width;
+    int height     = image->height;
+    int rowStride  = image->rowStride;
+    int numOffsets = SE->numOffsets;
+
+    int top    = SE->originY;
+    int bottom = SE->height - SE->originY - 1;
+    int left   = SE->originX;
+    int right  = SE->width - SE->originX - 1;
+
+    copy_se_to_constant(SE);
+
+    uint64_t* d_in  = nullptr;
+    uint64_t* d_out = nullptr;
+    size_t size = (size_t)rowStride * height * sizeof(uint64_t);
+
+    CUDA_CHECK(cudaMalloc((void**)&d_in,  size));
+    CUDA_CHECK(cudaMalloc((void**)&d_out, size));
+
+    CUDA_CHECK(cudaMemcpy(d_in, image->data, size, cudaMemcpyHostToDevice));
+    CUDA_CHECK(cudaMemset(d_out, 0, size));
+
+    dim3 blockSize(block_dim_x, block_dim_y);
+    dim3 gridSize(
+        (rowStride + block_dim_x - 1) / block_dim_x,
+        (height    + block_dim_y - 1) / block_dim_y
+    );
+
+    int leftHaloWords  = (left + 63) / 64;
+    int rightHaloWords = right / 64;
+    int tile_word_w    = leftHaloWords + block_dim_x + rightHaloWords + 1;
+    int tile_h         = top + block_dim_y + bottom;
+    int shared_bytes   = tile_word_w * tile_h * sizeof(uint64_t);
+
+    erosionUint64ImageKernel<<<gridSize, blockSize, shared_bytes>>>(
+        d_in, d_out,
+        width, height, rowStride,
+        numOffsets,
+        top, bottom, left, right
+    );
+
+    CUDA_CHECK(cudaDeviceSynchronize());
+    CUDA_CHECK(cudaGetLastError());
+
+    CUDA_CHECK(cudaMemcpy(output->data, d_out, size, cudaMemcpyDeviceToHost));
+
+    CUDA_CHECK(cudaFree(d_in));
+    CUDA_CHECK(cudaFree(d_out));
+
+    return 0;
+}
+
+int dilationUint64ImageCuda(Uint64Image* image, StructuringElementWithOffsets* SE, Uint64Image* output, int block_dim_x, int block_dim_y) {
+    if (!image || !image->data || !SE || !output || !output->data) {
+        fprintf(stderr, "Parametri non validi\n");
+        return -1;
+    }
+
+    int width      = image->width;
+    int height     = image->height;
+    int rowStride  = image->rowStride;
+    int numOffsets = SE->numOffsets;
+
+    int top    = SE->originY;
+    int bottom = SE->height - SE->originY - 1;
+    int left   = SE->originX;
+    int right  = SE->width - SE->originX - 1;
+
+    copy_se_to_constant(SE);
+
+    uint64_t* d_in  = nullptr;
+    uint64_t* d_out = nullptr;
+    size_t size = (size_t)rowStride * height * sizeof(uint64_t);
+
+    CUDA_CHECK(cudaMalloc((void**)&d_in,  size));
+    CUDA_CHECK(cudaMalloc((void**)&d_out, size));
+
+    CUDA_CHECK(cudaMemcpy(d_in, image->data, size, cudaMemcpyHostToDevice));
+    CUDA_CHECK(cudaMemset(d_out, 0, size));
+
+    dim3 blockSize(block_dim_x, block_dim_y);
+    dim3 gridSize(
+        (rowStride + block_dim_x - 1) / block_dim_x,
+        (height    + block_dim_y - 1) / block_dim_y
+    );
+
+    int leftHaloWords  = right / 64 + 1;
+    int rightHaloWords = (left + 63) / 64;
+    int tile_word_w    = leftHaloWords + block_dim_x + rightHaloWords;
+    int tile_h         = bottom + block_dim_y + top;
+    int shared_bytes   = tile_word_w * tile_h * sizeof(uint64_t);
+
+    dilationUint64ImageKernel<<<gridSize, blockSize, shared_bytes>>>(
+        d_in, d_out,
+        width, height, rowStride,
+        numOffsets,
+        top, bottom, left, right
+    );
+
+    CUDA_CHECK(cudaDeviceSynchronize());
+    CUDA_CHECK(cudaGetLastError());
+
+    CUDA_CHECK(cudaMemcpy(output->data, d_out, size, cudaMemcpyDeviceToHost));
+
+    CUDA_CHECK(cudaFree(d_in));
+    CUDA_CHECK(cudaFree(d_out));
+
+    return 0;
+}
+
+int openingUint64ImageCuda(Uint64Image* image, StructuringElementWithOffsets* SE, Uint64Image* output, int block_dim_x, int block_dim_y) {
+    if (!image || !image->data || !SE || !output || !output->data) {
+        fprintf(stderr, "Parametri non validi\n");
+        return -1;
+    }
+
+    Uint64Image* temp = createUint64Image(image->width, image->height, image->magicNumber);
+    if (!temp) return -1;
+    temp->data = (uint64_t*)calloc((size_t)image->rowStride * image->height, sizeof(uint64_t));
+    if (!temp->data) { freeUint64Image(temp); return -1; }
+
+    if (erosionUint64ImageCuda(image, SE, temp, block_dim_x, block_dim_y) != 0) {
+        freeUint64Image(temp); return -1;
+    }
+    if (dilationUint64ImageCuda(temp, SE, output, block_dim_x, block_dim_y) != 0) {
+        freeUint64Image(temp); return -1;
+    }
+
+    freeUint64Image(temp);
+    return 0;
+}
+
+int closingUint64ImageCuda(Uint64Image* image, StructuringElementWithOffsets* SE, Uint64Image* output, int block_dim_x, int block_dim_y) {
+    if (!image || !image->data || !SE || !output || !output->data) {
+        fprintf(stderr, "Parametri non validi\n");
+        return -1;
+    }
+
+    Uint64Image* temp = createUint64Image(image->width, image->height, image->magicNumber);
+    if (!temp) return -1;
+    temp->data = (uint64_t*)calloc((size_t)image->rowStride * image->height, sizeof(uint64_t));
+    if (!temp->data) { freeUint64Image(temp); return -1; }
+
+    if (dilationUint64ImageCuda(image, SE, temp, block_dim_x, block_dim_y) != 0) {
+        freeUint64Image(temp); return -1;
+    }
+    if (erosionUint64ImageCuda(temp, SE, output, block_dim_x, block_dim_y) != 0) {
+        freeUint64Image(temp); return -1;
+    }
+
+    freeUint64Image(temp);
+    return 0;
+}
