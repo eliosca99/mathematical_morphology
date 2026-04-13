@@ -97,6 +97,10 @@ typedef struct {
     SeparableOp separable;
     ByteOffsetOp byteOffset;
     Uint64OffsetOp uint64Offset;
+    OffsetOp parallelOffset;
+    OffsetOp parallelNaive;
+    ByteOffsetOp parallelByteOffset;
+    Uint64OffsetOp parallelUint64Offset;
     const char* outputFile;
 } OperationSpec;
 
@@ -311,6 +315,68 @@ static void formatMetric(double value, char* out, size_t outSize) {
     }
 }
 
+// Placeholder hooks: finche' le versioni parallele non sono implementate,
+// il benchmark le esegue comunque e riporta NA nel CSV.
+static int parallelNotImplementedOffset(Image* image, StructuringElementWithOffsets* se, Image* output, Image* temp) {
+    (void)image;
+    (void)se;
+    (void)output;
+    (void)temp;
+    return -1;
+}
+
+static int parallelNotImplementedByte(ByteImage* image, StructuringElementWithOffsets* se, ByteImage* output, ByteImage* temp) {
+    (void)image;
+    (void)se;
+    (void)output;
+    (void)temp;
+    return -1;
+}
+
+static int parallelNotImplementedUint64(Uint64Image* image, StructuringElementWithOffsets* se, Uint64Image* output, Uint64Image* temp) {
+    (void)image;
+    (void)se;
+    (void)output;
+    (void)temp;
+    return -1;
+}
+
+#include "parallel/morpho_cuda.h"
+
+static int runParallelErosion(Image* image, StructuringElementWithOffsets* se, Image* output, Image* temp) {
+    (void)temp;
+    return erosionCuda(image, se, output, 32, 32);
+}
+static int runParallelDilation(Image* image, StructuringElementWithOffsets* se, Image* output, Image* temp) {
+    (void)temp;
+    return dilationCuda(image, se, output, 32, 32);
+}
+static int runParallelOpening(Image* image, StructuringElementWithOffsets* se, Image* output, Image* temp) {
+    (void)temp;
+    return openingCuda(image, se, output, 32, 32);
+}
+static int runParallelClosing(Image* image, StructuringElementWithOffsets* se, Image* output, Image* temp) {
+    (void)temp;
+    return closingCuda(image, se, output, 32, 32);
+}
+
+static int runParallelErosionNaive(Image* image, StructuringElementWithOffsets* se, Image* output, Image* temp) {
+    (void)temp;
+    return erosionNaive(image, se, output, 32, 32);
+}
+static int runParallelDilationNaive(Image* image, StructuringElementWithOffsets* se, Image* output, Image* temp) {
+    (void)temp;
+    return dilationNaive(image, se, output, 32, 32);
+}
+static int runParallelOpeningNaive(Image* image, StructuringElementWithOffsets* se, Image* output, Image* temp) {
+    (void)temp;
+    return openingNaive(image, se, output, 32, 32);
+}
+static int runParallelClosingNaive(Image* image, StructuringElementWithOffsets* se, Image* output, Image* temp) {
+    (void)temp;
+    return closingNaive(image, se, output, 32, 32);
+}
+
 static int saveOperationImages(Image* image, StructuringElement* se, const char* outputDir, const OperationSpec* ops, int numOps) {
     Image* out = allocateImageBufferLike(image);
     Image* tmp = allocateImageBufferLike(image);
@@ -430,10 +496,10 @@ int main(int argc, char* argv[]) {
     }
 
     OperationSpec ops[] = {
-        {"erosion",  erosion,  erosionWithOffsets,  erosionSeparable,  erosionByteImage,  erosionUint64Image,  "erosion.pbm"},
-        {"dilation", dilation, dilationWithOffsets, dilationSeparable, dilationByteImage, dilationUint64Image, "dilation.pbm"},
-        {"opening",  opening,  openingWithOffsets,  openingSeparable,  openingByteImage,  openingUint64Image,  "opening.pbm"},
-        {"closing",  closing,  closingWithOffsets,  closingSeparable,  closingByteImage,  closingUint64Image,  "closing.pbm"}
+        {"erosion",  erosion,  erosionWithOffsets,  erosionSeparable,  erosionByteImage,  erosionUint64Image,  runParallelErosion, runParallelErosionNaive, parallelNotImplementedByte, parallelNotImplementedUint64, "erosion.pbm"},
+        {"dilation", dilation, dilationWithOffsets, dilationSeparable, dilationByteImage, dilationUint64Image, runParallelDilation, runParallelDilationNaive, parallelNotImplementedByte, parallelNotImplementedUint64, "dilation.pbm"},
+        {"opening",  opening,  openingWithOffsets,  openingSeparable,  openingByteImage,  openingUint64Image,  runParallelOpening, runParallelOpeningNaive, parallelNotImplementedByte, parallelNotImplementedUint64, "opening.pbm"},
+        {"closing",  closing,  closingWithOffsets,  closingSeparable,  closingByteImage,  closingUint64Image,  runParallelClosing, runParallelClosingNaive, parallelNotImplementedByte, parallelNotImplementedUint64, "closing.pbm"}
     };
     int numOps = (int)(sizeof(ops) / sizeof(ops[0]));
 
@@ -456,7 +522,7 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
-    fprintf(csv, "se_shape,se_size,se_radius,operation,base_ms,offset_ms,separable_ms,byte_ms,uint64_ms,speedup_offset,speedup_separable,speedup_byte,speedup_uint64,runs,input\n");
+    fprintf(csv, "se_shape,se_size,se_radius,operation,base_ms,offset_ms,separable_ms,byte_ms,uint64_ms,parallel_offset_ms,parallel_naive_ms,parallel_byte_ms,parallel_uint64_ms,speedup_offset,speedup_separable,speedup_byte,speedup_uint64,speedup_parallel_offset,speedup_parallel_naive,speedup_parallel_byte,speedup_parallel_uint64,runs,input\n");
 
     printf("Input: %s (%dx%d)\n", inputPath, image->width, image->height);
     printf("Run mediati: %d\n", numRuns);
@@ -508,6 +574,10 @@ int main(int argc, char* argv[]) {
                 }
                 double byteMs = benchmarkByteOffset(byteImage, seOff, ops[i].byteOffset, numRuns);
                 double uint64Ms = benchmarkUint64Offset(uint64Image, seOff, ops[i].uint64Offset, numRuns);
+                double parallelOffsetMs = benchmarkOffset(image, seOff, ops[i].parallelOffset, numRuns);
+                double parallelNaiveMs = benchmarkOffset(image, seOff, ops[i].parallelNaive, numRuns);
+                double parallelByteMs = benchmarkByteOffset(byteImage, seOff, ops[i].parallelByteOffset, numRuns);
+                double parallelUint64Ms = benchmarkUint64Offset(uint64Image, seOff, ops[i].parallelUint64Offset, numRuns);
 
                 if (baseMs < 0 || offsetMs < 0 || (shape == SE_SHAPE_BOX && separableMs < 0)) {
                     fprintf(stderr, "Errore: benchmark fallito per %s (%s, size=%d)\n", ops[i].name, shapeName, seSize);
@@ -524,6 +594,10 @@ int main(int argc, char* argv[]) {
                 double speedupSeparable = (separableMs > 0.0) ? (baseMs / separableMs) : -1.0;
                 double speedupByte = (byteMs > 0.0) ? (baseMs / byteMs) : -1.0;
                 double speedupUint64 = (uint64Ms > 0.0) ? (baseMs / uint64Ms) : -1.0;
+                double speedupParallelOffset = (parallelOffsetMs > 0.0) ? (baseMs / parallelOffsetMs) : -1.0;
+                double speedupParallelNaive = (parallelNaiveMs > 0.0) ? (baseMs / parallelNaiveMs) : -1.0;
+                double speedupParallelByte = (parallelByteMs > 0.0) ? (baseMs / parallelByteMs) : -1.0;
+                double speedupParallelUint64 = (parallelUint64Ms > 0.0) ? (baseMs / parallelUint64Ms) : -1.0;
 
                 char separableMsField[32];
                 char speedupSeparableField[32];
@@ -531,14 +605,30 @@ int main(int argc, char* argv[]) {
                 char speedupByteField[32];
                 char uint64MsField[32];
                 char speedupUint64Field[32];
+                char parallelOffsetMsField[32];
+                char parallelNaiveMsField[32];
+                char parallelByteMsField[32];
+                char parallelUint64MsField[32];
+                char speedupParallelOffsetField[32];
+                char speedupParallelNaiveField[32];
+                char speedupParallelByteField[32];
+                char speedupParallelUint64Field[32];
                 formatMetric(separableMs, separableMsField, sizeof(separableMsField));
                 formatMetric(speedupSeparable, speedupSeparableField, sizeof(speedupSeparableField));
                 formatMetric(byteMs, byteMsField, sizeof(byteMsField));
                 formatMetric(speedupByte, speedupByteField, sizeof(speedupByteField));
                 formatMetric(uint64Ms, uint64MsField, sizeof(uint64MsField));
                 formatMetric(speedupUint64, speedupUint64Field, sizeof(speedupUint64Field));
+                formatMetric(parallelOffsetMs, parallelOffsetMsField, sizeof(parallelOffsetMsField));
+                formatMetric(parallelNaiveMs, parallelNaiveMsField, sizeof(parallelNaiveMsField));
+                formatMetric(parallelByteMs, parallelByteMsField, sizeof(parallelByteMsField));
+                formatMetric(parallelUint64Ms, parallelUint64MsField, sizeof(parallelUint64MsField));
+                formatMetric(speedupParallelOffset, speedupParallelOffsetField, sizeof(speedupParallelOffsetField));
+                formatMetric(speedupParallelNaive, speedupParallelNaiveField, sizeof(speedupParallelNaiveField));
+                formatMetric(speedupParallelByte, speedupParallelByteField, sizeof(speedupParallelByteField));
+                formatMetric(speedupParallelUint64, speedupParallelUint64Field, sizeof(speedupParallelUint64Field));
 
-                fprintf(csv, "%s,%d,%d,%s,%.6f,%.6f,%s,%s,%s,%.6f,%s,%s,%s,%d,%s\n",
+                fprintf(csv, "%s,%d,%d,%s,%.6f,%.6f,%s,%s,%s,%s,%s,%s,%s,%.6f,%s,%s,%s,%s,%s,%s,%s,%d,%s\n",
                     shapeName,
                     seSize,
                     seRadius,
@@ -548,28 +638,40 @@ int main(int argc, char* argv[]) {
                     separableMsField,
                     byteMsField,
                     uint64MsField,
+                    parallelOffsetMsField,
+                    parallelNaiveMsField,
+                    parallelByteMsField,
+                    parallelUint64MsField,
                     speedupOffset,
                     speedupSeparableField,
                     speedupByteField,
                     speedupUint64Field,
+                    speedupParallelOffsetField,
+                    speedupParallelNaiveField,
+                    speedupParallelByteField,
+                    speedupParallelUint64Field,
                     numRuns,
                     inputPath);
 
                 if (shape == SE_SHAPE_BOX) {
-                    printf("%s -> base: %.3f ms | offset: %.3f ms | separabile: %s ms | byte: %s ms | uint64: %s ms\n",
+                    printf("%s -> base: %.3f ms | offset: %.3f ms | separabile: %s ms | byte: %s ms | uint64: %s ms | cuda_offset: %s ms | cuda_naive: %s ms\n",
                         ops[i].name,
                         baseMs,
                         offsetMs,
                         separableMsField,
                         byteMsField,
-                        uint64MsField);
+                        uint64MsField,
+                        parallelOffsetMsField,
+                        parallelNaiveMsField);
                 } else {
-                    printf("%s -> base: %.3f ms | offset: %.3f ms | separabile: NA | byte: %s ms | uint64: %s ms\n",
+                    printf("%s -> base: %.3f ms | offset: %.3f ms | separabile: NA | byte: %s ms | uint64: %s ms | cuda_offset: %s ms | cuda_naive: %s ms\n",
                         ops[i].name,
                         baseMs,
                         offsetMs,
                         byteMsField,
-                        uint64MsField);
+                        uint64MsField,
+                        parallelOffsetMsField,
+                        parallelNaiveMsField);
                 }
             }
 
