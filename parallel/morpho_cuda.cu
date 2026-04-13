@@ -1,6 +1,8 @@
 #include "morpho_cuda.h"
 #include "kernels.cuh"
 
+double global_cuda_time_ms = 0.0;
+
 int erosionNaive(Image* image, StructuringElementWithOffsets* SE, Image* output, int block_dim_x, int block_dim_y) {
     // funzione wrapper lanciata dall'host che alloca e inizializza la memoria sia su host
     // che su device e lancia il kernel
@@ -40,11 +42,29 @@ int erosionNaive(Image* image, StructuringElementWithOffsets* SE, Image* output,
     dim3 blockSize(block_dim_x, block_dim_y);
     dim3 gridSize((w + blockSize.x - 1) / blockSize.x, (h + blockSize.y - 1) / blockSize.y);
 
+    cudaEvent_t start, stop;
+    cudaEventCreate(&start);
+    cudaEventCreate(&stop);
+
+    cudaEventRecord(start);
+
+
     erosionNaiveKernel<<<gridSize, blockSize>>>(d_in, d_out, w, h, numOffsets, top, bottom, left, right);
 
     // verifico la presenza di errori e aspetto la fine dell'esecuzione dei thread 
     CUDA_CHECK(cudaDeviceSynchronize());
+    
+    cudaEventRecord(stop);
+    CUDA_CHECK(cudaEventSynchronize(stop));
     CUDA_CHECK(cudaGetLastError());
+
+    float ms = 0;
+    cudaEventElapsedTime(&ms, start, stop);
+    global_cuda_time_ms = ms;
+
+    cudaEventDestroy(start);
+    cudaEventDestroy(stop);
+
 
     // copio il risultato dalla memoria della gpu alla ram
     CUDA_CHECK(cudaMemcpy(output->data, d_out, size, cudaMemcpyDeviceToHost));
@@ -89,11 +109,29 @@ int dilationNaive(Image* image, StructuringElementWithOffsets* SE, Image* output
     dim3 blockSize(block_dim_x, block_dim_y);
     dim3 gridSize((w + blockSize.x - 1) / blockSize.x, (h + blockSize.y - 1) / blockSize.y);
 
+    cudaEvent_t start, stop;
+    cudaEventCreate(&start);
+    cudaEventCreate(&stop);
+
+    cudaEventRecord(start);
+
+
     dilationNaiveKernel<<<gridSize, blockSize>>>(d_in, d_out, w, h, numOffsets);
 
     // verifico la presenza di errori e aspetto la fine dell'esecuzione dei thread 
     CUDA_CHECK(cudaDeviceSynchronize());
+    
+    cudaEventRecord(stop);
+    CUDA_CHECK(cudaEventSynchronize(stop));
     CUDA_CHECK(cudaGetLastError());
+
+    float ms = 0;
+    cudaEventElapsedTime(&ms, start, stop);
+    global_cuda_time_ms = ms;
+
+    cudaEventDestroy(start);
+    cudaEventDestroy(stop);
+
 
     // copio il risultato dalla memoria della gpu alla ram
     CUDA_CHECK(cudaMemcpy(output->data, d_out, size, cudaMemcpyDeviceToHost));
@@ -137,12 +175,30 @@ int openingNaive(Image* image, StructuringElementWithOffsets* SE, Image* output,
     dim3 blockSize(block_dim_x, block_dim_y);
     dim3 gridSize((w + blockSize.x - 1) / blockSize.x, (h + blockSize.y - 1) / blockSize.y);
 
+    cudaEvent_t start, stop;
+    cudaEventCreate(&start);
+    cudaEventCreate(&stop);
+
+    cudaEventRecord(start);
+
+
     erosionNaiveKernel<<<gridSize, blockSize>>>(d_in, d_temp, w, h, numOffsets, top, bottom, left, right);
 
     dilationNaiveKernel<<<gridSize, blockSize>>>(d_temp, d_out, w, h, numOffsets);
 
     CUDA_CHECK(cudaDeviceSynchronize());
+    
+    cudaEventRecord(stop);
+    CUDA_CHECK(cudaEventSynchronize(stop));
     CUDA_CHECK(cudaGetLastError());
+
+    float ms = 0;
+    cudaEventElapsedTime(&ms, start, stop);
+    global_cuda_time_ms = ms;
+
+    cudaEventDestroy(start);
+    cudaEventDestroy(stop);
+
 
     // copio il risultato dalla memoria della gpu alla ram
     CUDA_CHECK(cudaMemcpy(output->data, d_out, size, cudaMemcpyDeviceToHost));
@@ -187,12 +243,30 @@ int closingNaive(Image* image, StructuringElementWithOffsets* SE, Image* output,
     dim3 blockSize(block_dim_x, block_dim_y);
     dim3 gridSize((w + blockSize.x - 1) / blockSize.x, (h + blockSize.y - 1) / blockSize.y);
 
+    cudaEvent_t start, stop;
+    cudaEventCreate(&start);
+    cudaEventCreate(&stop);
+
+    cudaEventRecord(start);
+
+
     dilationNaiveKernel<<<gridSize, blockSize>>>(d_in, d_temp, w, h, numOffsets);
     
     erosionNaiveKernel<<<gridSize, blockSize>>>(d_temp, d_out, w, h, numOffsets, top, bottom, left, right);
 
     CUDA_CHECK(cudaDeviceSynchronize());
+    
+    cudaEventRecord(stop);
+    CUDA_CHECK(cudaEventSynchronize(stop));
     CUDA_CHECK(cudaGetLastError());
+
+    float ms = 0;
+    cudaEventElapsedTime(&ms, start, stop);
+    global_cuda_time_ms = ms;
+
+    cudaEventDestroy(start);
+    cudaEventDestroy(stop);
+
 
     // copio il risultato dalla memoria della gpu alla ram
     CUDA_CHECK(cudaMemcpy(output->data, d_out, size, cudaMemcpyDeviceToHost));
@@ -234,6 +308,13 @@ int erosionCuda(Image* image, StructuringElementWithOffsets* SE, Image* output, 
     dim3 blockSize(block_dim_x, block_dim_y);
     dim3 gridSize((w + blockSize.x - 1) / blockSize.x, (h + blockSize.y - 1) / blockSize.y);
 
+    cudaEvent_t start, stop;
+    cudaEventCreate(&start);
+    cudaEventCreate(&stop);
+
+    cudaEventRecord(start);
+
+
     int tile_w = left + right + block_dim_x;
     int tile_h = top + bottom + block_dim_y;
     int shared_bytes = tile_w * tile_h * sizeof(unsigned char);
@@ -241,7 +322,18 @@ int erosionCuda(Image* image, StructuringElementWithOffsets* SE, Image* output, 
     erosionKernel<<<gridSize, blockSize, shared_bytes>>>(d_in, d_out, w, h, numOffsets, top, bottom, left, right);
 
     CUDA_CHECK(cudaDeviceSynchronize());
+    
+    cudaEventRecord(stop);
+    CUDA_CHECK(cudaEventSynchronize(stop));
     CUDA_CHECK(cudaGetLastError());
+
+    float ms = 0;
+    cudaEventElapsedTime(&ms, start, stop);
+    global_cuda_time_ms = ms;
+
+    cudaEventDestroy(start);
+    cudaEventDestroy(stop);
+
 
     CUDA_CHECK(cudaMemcpy(output->data, d_out, size, cudaMemcpyDeviceToHost));
 
@@ -281,6 +373,13 @@ int dilationCuda(Image* image, StructuringElementWithOffsets* SE, Image* output,
     dim3 blockSize(block_dim_x, block_dim_y);
     dim3 gridSize((w + blockSize.x - 1) / blockSize.x, (h + blockSize.y - 1) / blockSize.y);
 
+    cudaEvent_t start, stop;
+    cudaEventCreate(&start);
+    cudaEventCreate(&stop);
+
+    cudaEventRecord(start);
+
+
     int tile_w = left + right + block_dim_x;
     int tile_h = top + bottom + block_dim_y;
     int shared_bytes = tile_w * tile_h * sizeof(unsigned char);
@@ -288,7 +387,18 @@ int dilationCuda(Image* image, StructuringElementWithOffsets* SE, Image* output,
     dilationKernel<<<gridSize, blockSize, shared_bytes>>>(d_in, d_out, w, h, numOffsets, top, bottom, left, right);
 
     CUDA_CHECK(cudaDeviceSynchronize());
+    
+    cudaEventRecord(stop);
+    CUDA_CHECK(cudaEventSynchronize(stop));
     CUDA_CHECK(cudaGetLastError());
+
+    float ms = 0;
+    cudaEventElapsedTime(&ms, start, stop);
+    global_cuda_time_ms = ms;
+
+    cudaEventDestroy(start);
+    cudaEventDestroy(stop);
+
 
     CUDA_CHECK(cudaMemcpy(output->data, d_out, size, cudaMemcpyDeviceToHost));
 
@@ -331,6 +441,13 @@ int openingCuda(Image* image, StructuringElementWithOffsets* SE, Image* output, 
     dim3 blockSize(block_dim_x, block_dim_y);
     dim3 gridSize((w + blockSize.x - 1) / blockSize.x, (h + blockSize.y - 1) / blockSize.y);
 
+    cudaEvent_t start, stop;
+    cudaEventCreate(&start);
+    cudaEventCreate(&stop);
+
+    cudaEventRecord(start);
+
+
     int tile_w = left + right + block_dim_x;
     int tile_h = top + bottom + block_dim_y;
     int shared_bytes = tile_w * tile_h * sizeof(unsigned char);
@@ -340,7 +457,18 @@ int openingCuda(Image* image, StructuringElementWithOffsets* SE, Image* output, 
     dilationKernel<<<gridSize, blockSize, shared_bytes>>>(d_temp, d_out, w, h, numOffsets, top, bottom, left, right);
 
     CUDA_CHECK(cudaDeviceSynchronize());
+    
+    cudaEventRecord(stop);
+    CUDA_CHECK(cudaEventSynchronize(stop));
     CUDA_CHECK(cudaGetLastError());
+
+    float ms = 0;
+    cudaEventElapsedTime(&ms, start, stop);
+    global_cuda_time_ms = ms;
+
+    cudaEventDestroy(start);
+    cudaEventDestroy(stop);
+
 
     // copio il risultato dalla memoria della gpu alla ram
     CUDA_CHECK(cudaMemcpy(output->data, d_out, size, cudaMemcpyDeviceToHost));
@@ -385,6 +513,13 @@ int closingCuda(Image* image, StructuringElementWithOffsets* SE, Image* output, 
     dim3 blockSize(block_dim_x, block_dim_y);
     dim3 gridSize((w + blockSize.x - 1) / blockSize.x, (h + blockSize.y - 1) / blockSize.y);
 
+    cudaEvent_t start, stop;
+    cudaEventCreate(&start);
+    cudaEventCreate(&stop);
+
+    cudaEventRecord(start);
+
+
     int tile_w = left + right + block_dim_x;
     int tile_h = top + bottom + block_dim_y;
     int shared_bytes = tile_w * tile_h * sizeof(unsigned char);
@@ -394,7 +529,18 @@ int closingCuda(Image* image, StructuringElementWithOffsets* SE, Image* output, 
     erosionKernel<<<gridSize, blockSize, shared_bytes>>>(d_temp, d_out, w, h, numOffsets, top, bottom, left, right);
 
     CUDA_CHECK(cudaDeviceSynchronize());
+    
+    cudaEventRecord(stop);
+    CUDA_CHECK(cudaEventSynchronize(stop));
     CUDA_CHECK(cudaGetLastError());
+
+    float ms = 0;
+    cudaEventElapsedTime(&ms, start, stop);
+    global_cuda_time_ms = ms;
+
+    cudaEventDestroy(start);
+    cudaEventDestroy(stop);
+
 
     // copio il risultato dalla memoria della gpu alla ram
     CUDA_CHECK(cudaMemcpy(output->data, d_out, size, cudaMemcpyDeviceToHost));
@@ -440,6 +586,13 @@ int erosionByteImageCuda(ByteImage* image, StructuringElementWithOffsets* SE, By
         (height    + block_dim_y - 1) / block_dim_y
     );
 
+    cudaEvent_t start, stop;
+    cudaEventCreate(&start);
+    cudaEventCreate(&stop);
+
+    cudaEventRecord(start);
+
+
     int leftHaloBytes  = (left + 7) / 8;
     int rightHaloBytes = right / 8;
     int tile_byte_w    = leftHaloBytes + block_dim_x + rightHaloBytes + 1;
@@ -454,7 +607,18 @@ int erosionByteImageCuda(ByteImage* image, StructuringElementWithOffsets* SE, By
     );
 
     CUDA_CHECK(cudaDeviceSynchronize());
+    
+    cudaEventRecord(stop);
+    CUDA_CHECK(cudaEventSynchronize(stop));
     CUDA_CHECK(cudaGetLastError());
+
+    float ms = 0;
+    cudaEventElapsedTime(&ms, start, stop);
+    global_cuda_time_ms = ms;
+
+    cudaEventDestroy(start);
+    cudaEventDestroy(stop);
+
 
     CUDA_CHECK(cudaMemcpy(output->data, d_out, size, cudaMemcpyDeviceToHost));
 
@@ -498,6 +662,13 @@ int dilationByteImageCuda(ByteImage* image, StructuringElementWithOffsets* SE, B
         (height    + block_dim_y - 1) / block_dim_y
     );
 
+    cudaEvent_t start, stop;
+    cudaEventCreate(&start);
+    cudaEventCreate(&stop);
+
+    cudaEventRecord(start);
+
+
     // halo invertito rispetto all'erosione
     int leftHaloBytes  = right / 8 + 1;
     int rightHaloBytes = (left + 7) / 8;
@@ -513,7 +684,18 @@ int dilationByteImageCuda(ByteImage* image, StructuringElementWithOffsets* SE, B
     );
 
     CUDA_CHECK(cudaDeviceSynchronize());
+    
+    cudaEventRecord(stop);
+    CUDA_CHECK(cudaEventSynchronize(stop));
     CUDA_CHECK(cudaGetLastError());
+
+    float ms = 0;
+    cudaEventElapsedTime(&ms, start, stop);
+    global_cuda_time_ms = ms;
+
+    cudaEventDestroy(start);
+    cudaEventDestroy(stop);
+
 
     CUDA_CHECK(cudaMemcpy(output->data, d_out, size, cudaMemcpyDeviceToHost));
 
@@ -614,6 +796,13 @@ int erosionUint64ImageCuda(Uint64Image* image, StructuringElementWithOffsets* SE
         (height    + block_dim_y - 1) / block_dim_y
     );
 
+    cudaEvent_t start, stop;
+    cudaEventCreate(&start);
+    cudaEventCreate(&stop);
+
+    cudaEventRecord(start);
+
+
     int leftHaloWords  = (left + 63) / 64;
     int rightHaloWords = right / 64;
     int tile_word_w    = leftHaloWords + block_dim_x + rightHaloWords + 1;
@@ -628,7 +817,18 @@ int erosionUint64ImageCuda(Uint64Image* image, StructuringElementWithOffsets* SE
     );
 
     CUDA_CHECK(cudaDeviceSynchronize());
+    
+    cudaEventRecord(stop);
+    CUDA_CHECK(cudaEventSynchronize(stop));
     CUDA_CHECK(cudaGetLastError());
+
+    float ms = 0;
+    cudaEventElapsedTime(&ms, start, stop);
+    global_cuda_time_ms = ms;
+
+    cudaEventDestroy(start);
+    cudaEventDestroy(stop);
+
 
     CUDA_CHECK(cudaMemcpy(output->data, d_out, size, cudaMemcpyDeviceToHost));
 
@@ -672,6 +872,13 @@ int dilationUint64ImageCuda(Uint64Image* image, StructuringElementWithOffsets* S
         (height    + block_dim_y - 1) / block_dim_y
     );
 
+    cudaEvent_t start, stop;
+    cudaEventCreate(&start);
+    cudaEventCreate(&stop);
+
+    cudaEventRecord(start);
+
+
     int leftHaloWords  = right / 64 + 1;
     int rightHaloWords = (left + 63) / 64;
     int tile_word_w    = leftHaloWords + block_dim_x + rightHaloWords;
@@ -686,7 +893,18 @@ int dilationUint64ImageCuda(Uint64Image* image, StructuringElementWithOffsets* S
     );
 
     CUDA_CHECK(cudaDeviceSynchronize());
+    
+    cudaEventRecord(stop);
+    CUDA_CHECK(cudaEventSynchronize(stop));
     CUDA_CHECK(cudaGetLastError());
+
+    float ms = 0;
+    cudaEventElapsedTime(&ms, start, stop);
+    global_cuda_time_ms = ms;
+
+    cudaEventDestroy(start);
+    cudaEventDestroy(stop);
+
 
     CUDA_CHECK(cudaMemcpy(output->data, d_out, size, cudaMemcpyDeviceToHost));
 

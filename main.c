@@ -4,6 +4,8 @@
 #include "sequential/image_utils.h"
 #include "sequential/morpho.h"
 
+extern double global_cuda_time_ms;
+
 #include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -162,6 +164,7 @@ static double benchmarkBase(Image* image, StructuringElement* se, BaseOp op, int
     }
 
     for (int r = 0; r < runs; r++) {
+        global_cuda_time_ms = -1.0;
         clock_gettime(CLOCK_MONOTONIC, &start);
         int rc = op(image, se, out, tmp);
         clock_gettime(CLOCK_MONOTONIC, &end);
@@ -170,7 +173,12 @@ static double benchmarkBase(Image* image, StructuringElement* se, BaseOp op, int
             freeImage(out);
             return -1.0;
         }
-        total += timeDiffMs(start, end);
+        
+        if (global_cuda_time_ms >= 0.0) {
+            total += global_cuda_time_ms;
+        } else {
+            total += timeDiffMs(start, end);
+        }
     }
 
     freeImage(tmp);
@@ -192,6 +200,7 @@ static double benchmarkOffset(Image* image, StructuringElementWithOffsets* se, O
     }
 
     for (int r = 0; r < runs; r++) {
+        global_cuda_time_ms = -1.0;
         clock_gettime(CLOCK_MONOTONIC, &start);
         int rc = op(image, se, out, tmp);
         clock_gettime(CLOCK_MONOTONIC, &end);
@@ -200,7 +209,12 @@ static double benchmarkOffset(Image* image, StructuringElementWithOffsets* se, O
             freeImage(out);
             return -1.0;
         }
-        total += timeDiffMs(start, end);
+        
+        if (global_cuda_time_ms >= 0.0) {
+            total += global_cuda_time_ms;
+        } else {
+            total += timeDiffMs(start, end);
+        }
     }
 
     freeImage(tmp);
@@ -222,6 +236,7 @@ static double benchmarkSeparable(Image* image, int size, SeparableOp op, int run
     }
 
     for (int r = 0; r < runs; r++) {
+        global_cuda_time_ms = -1.0;
         clock_gettime(CLOCK_MONOTONIC, &start);
         int rc = op(image, size, size, out, tmp);
         clock_gettime(CLOCK_MONOTONIC, &end);
@@ -230,7 +245,12 @@ static double benchmarkSeparable(Image* image, int size, SeparableOp op, int run
             freeImage(out);
             return -1.0;
         }
-        total += timeDiffMs(start, end);
+        
+        if (global_cuda_time_ms >= 0.0) {
+            total += global_cuda_time_ms;
+        } else {
+            total += timeDiffMs(start, end);
+        }
     }
 
     freeImage(tmp);
@@ -256,6 +276,7 @@ static double benchmarkByteOffset(ByteImage* image, StructuringElementWithOffset
     }
 
     for (int r = 0; r < runs; r++) {
+        global_cuda_time_ms = -1.0;
         clock_gettime(CLOCK_MONOTONIC, &start);
         int rc = op(image, se, out, tmp);
         clock_gettime(CLOCK_MONOTONIC, &end);
@@ -264,7 +285,12 @@ static double benchmarkByteOffset(ByteImage* image, StructuringElementWithOffset
             freeByteImage(out);
             return -1.0;
         }
-        total += timeDiffMs(start, end);
+        
+        if (global_cuda_time_ms >= 0.0) {
+            total += global_cuda_time_ms;
+        } else {
+            total += timeDiffMs(start, end);
+        }
     }
 
     freeByteImage(tmp);
@@ -290,6 +316,7 @@ static double benchmarkUint64Offset(Uint64Image* image, StructuringElementWithOf
     }
 
     for (int r = 0; r < runs; r++) {
+        global_cuda_time_ms = -1.0;
         clock_gettime(CLOCK_MONOTONIC, &start);
         int rc = op(image, se, out, tmp);
         clock_gettime(CLOCK_MONOTONIC, &end);
@@ -298,7 +325,12 @@ static double benchmarkUint64Offset(Uint64Image* image, StructuringElementWithOf
             freeUint64Image(out);
             return -1.0;
         }
-        total += timeDiffMs(start, end);
+        
+        if (global_cuda_time_ms >= 0.0) {
+            total += global_cuda_time_ms;
+        } else {
+            total += timeDiffMs(start, end);
+        }
     }
 
     freeUint64Image(tmp);

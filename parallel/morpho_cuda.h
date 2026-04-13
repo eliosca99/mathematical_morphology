@@ -8,6 +8,7 @@ extern "C" {
 #include <stdio.h>
 #include <stdlib.h>
 
+extern double global_cuda_time_ms;
 #ifdef __CUDACC__
 #include <cuda_runtime.h>
 #define CUDA_CHECK(call)                                                      \
