@@ -68,11 +68,6 @@ int dilationNaive(Image* image, StructuringElementWithOffsets* SE, Image* output
     int h = image->height;
     int numOffsets = SE->numOffsets;
 
-    int top = SE->originY;
-    int bottom = SE->height - SE->originY - 1;
-    int left = SE->originX;
-    int right = SE->width - SE->originX - 1;
-
     // il SE è comune per tutti i blocchi, quindi lo alloco nella constant memory.
     // ogni blocco invece avrà la sua porzione di immagine da erodere, e quindi le immagini di input e output
     // le alloco nella global memory. della definizione del kernel poi, sfrutterò la shared memory
@@ -408,5 +403,179 @@ int closingCuda(Image* image, StructuringElementWithOffsets* SE, Image* output, 
     CUDA_CHECK(cudaFree(d_out));
     CUDA_CHECK(cudaFree(d_temp));
 
+    return 0;
+}
+
+int erosionByteImageCuda(ByteImage* image, StructuringElementWithOffsets* SE, ByteImage* output, int block_dim_x, int block_dim_y) {
+    if (!image || !image->data || !SE || !output || !output->data) {
+        fprintf(stderr, "Parametri non validi\n");
+        return -1;
+    }
+
+    int width     = image->width;
+    int height    = image->height;
+    int rowStride = image->rowStride;
+    int numOffsets = SE->numOffsets;
+
+    int top    = SE->originY;
+    int bottom = SE->height - SE->originY - 1;
+    int left   = SE->originX;
+    int right  = SE->width - SE->originX - 1;
+
+    copy_se_to_constant(SE);
+
+    unsigned char* d_in  = nullptr;
+    unsigned char* d_out = nullptr;
+    size_t size = (size_t)rowStride * height * sizeof(unsigned char);
+
+    CUDA_CHECK(cudaMalloc((void**)&d_in,  size));
+    CUDA_CHECK(cudaMalloc((void**)&d_out, size));
+
+    CUDA_CHECK(cudaMemcpy(d_in, image->data, size, cudaMemcpyHostToDevice));
+    CUDA_CHECK(cudaMemset(d_out, 0, size));
+
+    dim3 blockSize(block_dim_x, block_dim_y);
+    dim3 gridSize(
+        (rowStride + block_dim_x - 1) / block_dim_x,
+        (height    + block_dim_y - 1) / block_dim_y
+    );
+
+    int leftHaloBytes  = (left + 7) / 8;
+    int rightHaloBytes = right / 8;
+    int tile_byte_w    = leftHaloBytes + block_dim_x + rightHaloBytes + 1;
+    int tile_h         = top + block_dim_y + bottom;
+    int shared_bytes   = tile_byte_w * tile_h * sizeof(unsigned char);
+
+    erosionByteImageKernel<<<gridSize, blockSize, shared_bytes>>>(
+        d_in, d_out,
+        width, height, rowStride,
+        numOffsets,
+        top, bottom, left, right
+    );
+
+    CUDA_CHECK(cudaDeviceSynchronize());
+    CUDA_CHECK(cudaGetLastError());
+
+    CUDA_CHECK(cudaMemcpy(output->data, d_out, size, cudaMemcpyDeviceToHost));
+
+    CUDA_CHECK(cudaFree(d_in));
+    CUDA_CHECK(cudaFree(d_out));
+
+    return 0;
+}
+
+int dilationByteImageCuda(ByteImage* image, StructuringElementWithOffsets* SE, ByteImage* output, int block_dim_x, int block_dim_y) {
+    if (!image || !image->data || !SE || !output || !output->data) {
+        fprintf(stderr, "Parametri non validi\n");
+        return -1;
+    }
+
+    int width      = image->width;
+    int height     = image->height;
+    int rowStride  = image->rowStride;
+    int numOffsets = SE->numOffsets;
+
+    int top    = SE->originY;
+    int bottom = SE->height - SE->originY - 1;
+    int left   = SE->originX;
+    int right  = SE->width - SE->originX - 1;
+
+    copy_se_to_constant(SE);
+
+    unsigned char* d_in  = nullptr;
+    unsigned char* d_out = nullptr;
+    size_t size = (size_t)rowStride * height * sizeof(unsigned char);
+
+    CUDA_CHECK(cudaMalloc((void**)&d_in,  size));
+    CUDA_CHECK(cudaMalloc((void**)&d_out, size));
+
+    CUDA_CHECK(cudaMemcpy(d_in, image->data, size, cudaMemcpyHostToDevice));
+    CUDA_CHECK(cudaMemset(d_out, 0, size));
+
+    dim3 blockSize(block_dim_x, block_dim_y);
+    dim3 gridSize(
+        (rowStride + block_dim_x - 1) / block_dim_x,
+        (height    + block_dim_y - 1) / block_dim_y
+    );
+
+    // halo invertito rispetto all'erosione
+    int leftHaloBytes  = right / 8 + 1;
+    int rightHaloBytes = (left + 7) / 8;
+    int tile_byte_w    = leftHaloBytes + block_dim_x + rightHaloBytes;
+    int tile_h         = bottom + block_dim_y + top;
+    int shared_bytes   = tile_byte_w * tile_h * sizeof(unsigned char);
+
+    dilationByteImageKernel<<<gridSize, blockSize, shared_bytes>>>(
+        d_in, d_out,
+        width, height, rowStride,
+        numOffsets,
+        top, bottom, left, right
+    );
+
+    CUDA_CHECK(cudaDeviceSynchronize());
+    CUDA_CHECK(cudaGetLastError());
+
+    CUDA_CHECK(cudaMemcpy(output->data, d_out, size, cudaMemcpyDeviceToHost));
+
+    CUDA_CHECK(cudaFree(d_in));
+    CUDA_CHECK(cudaFree(d_out));
+
+    return 0;
+}
+
+int openingByteImageCuda(ByteImage* image, StructuringElementWithOffsets* SE, ByteImage* output, int block_dim_x, int block_dim_y) {
+    if (!image || !image->data || !SE || !output || !output->data) {
+        fprintf(stderr, "Parametri non validi\n");
+        return -1;
+    }
+
+    // alloco un ByteImage temporaneo con la stessa struttura dell'input
+    ByteImage* temp = createByteImage(image->width, image->height, image->magicNumber);
+    if (!temp) return -1;
+    temp->data = (unsigned char*)calloc((size_t)image->rowStride * image->height, sizeof(unsigned char));
+    if (!temp->data) {
+        freeByteImage(temp);
+        return -1;
+    }
+
+    // erosione → dilatazione
+    if (erosionByteImageCuda(image, SE, temp, block_dim_x, block_dim_y) != 0) {
+        freeByteImage(temp);
+        return -1;
+    }
+    if (dilationByteImageCuda(temp, SE, output, block_dim_x, block_dim_y) != 0) {
+        freeByteImage(temp);
+        return -1;
+    }
+
+    freeByteImage(temp);
+    return 0;
+}
+
+int closingByteImageCuda(ByteImage* image, StructuringElementWithOffsets* SE, ByteImage* output, int block_dim_x, int block_dim_y) {
+    if (!image || !image->data || !SE || !output || !output->data) {
+        fprintf(stderr, "Parametri non validi\n");
+        return -1;
+    }
+
+    ByteImage* temp = createByteImage(image->width, image->height, image->magicNumber);
+    if (!temp) return -1;
+    temp->data = (unsigned char*)calloc((size_t)image->rowStride * image->height, sizeof(unsigned char));
+    if (!temp->data) {
+        freeByteImage(temp);
+        return -1;
+    }
+
+    // dilatazione → erosione
+    if (dilationByteImageCuda(image, SE, temp, block_dim_x, block_dim_y) != 0) {
+        freeByteImage(temp);
+        return -1;
+    }
+    if (erosionByteImageCuda(temp, SE, output, block_dim_x, block_dim_y) != 0) {
+        freeByteImage(temp);
+        return -1;
+    }
+
+    freeByteImage(temp);
     return 0;
 }

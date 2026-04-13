@@ -55,8 +55,12 @@ __global__ void erosionByteImageKernel(
     unsigned char* __restrict__ d_out,
     int width,
     int height,
-    const int2* __restrict__ d_offset,
-    int numOffsets
+    int rowStride,
+    int numOffsets,
+    int top,
+    int bottom,
+    int left,
+    int right
 );
 
 __global__ void dilationByteImageKernel(
@@ -64,8 +68,12 @@ __global__ void dilationByteImageKernel(
     unsigned char* __restrict__ d_out,
     int width,
     int height,
-    const int2* __restrict__ d_offset,
-    int numOffsets
+    int rowStride,
+    int numOffsets,
+    int top,
+    int bottom,
+    int left,
+    int right
 );
 
 __global__ void erosionUint64ImageKernel(

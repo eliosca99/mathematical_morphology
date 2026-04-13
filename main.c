@@ -377,44 +377,87 @@ static int runParallelClosingNaive(Image* image, StructuringElementWithOffsets* 
     return closingNaive(image, se, output, 32, 32);
 }
 
-static int saveOperationImages(Image* image, StructuringElement* se, const char* outputDir, const OperationSpec* ops, int numOps) {
+static int runParallelErosionByteImage(ByteImage* image, StructuringElementWithOffsets* se, ByteImage* output, ByteImage* temp) {
+    (void)temp;
+    return erosionByteImageCuda(image, se, output, 32, 32);
+}
+
+static int runParallelDilationByteImage(ByteImage* image, StructuringElementWithOffsets* se, ByteImage* output, ByteImage* temp) {
+    (void)temp;
+    return dilationByteImageCuda(image, se, output, 32, 32);
+}
+
+static int runParallelOpeningByteImage(ByteImage* image, StructuringElementWithOffsets* se, ByteImage* output, ByteImage* temp) {
+    (void)temp;
+    return openingByteImageCuda(image, se, output, 32, 32);
+}
+
+static int runParallelClosingByteImage(ByteImage* image, StructuringElementWithOffsets* se, ByteImage* output, ByteImage* temp) {
+    (void)temp;
+    return closingByteImageCuda(image, se, output, 32, 32);
+}
+
+static int saveOperationImages(Image* image, StructuringElement* se, StructuringElementWithOffsets* seOff, ByteImage* byteImage, Uint64Image* uint64Image, const char* outputDir, const OperationSpec* ops, int numOps, int seSize) {
     Image* out = allocateImageBufferLike(image);
     Image* tmp = allocateImageBufferLike(image);
+    ByteImage* outByte = byteImage ? allocateByteImageBufferLike(byteImage) : NULL;
+    ByteImage* tmpByte = byteImage ? allocateByteImageBufferLike(byteImage) : NULL;
+    Uint64Image* outUint64 = uint64Image ? allocateUint64ImageBufferLike(uint64Image) : NULL;
+    Uint64Image* tmpUint64 = uint64Image ? allocateUint64ImageBufferLike(uint64Image) : NULL;
+
     if (!out || !tmp) {
-        freeImage(out);
-        freeImage(tmp);
+        freeImage(out); freeImage(tmp);
+        if (outByte) freeByteImage(outByte); if (tmpByte) freeByteImage(tmpByte);
+        if (outUint64) freeUint64Image(outUint64); if (tmpUint64) freeUint64Image(tmpUint64);
         fprintf(stderr, "Errore: impossibile allocare i buffer per il salvataggio immagini\n");
         return -1;
     }
 
     for (int i = 0; i < numOps; i++) {
         char path[1024];
-        int written = snprintf(path, sizeof(path), "%s/%s", outputDir, ops[i].outputFile);
-        if (written < 0 || written >= (int)sizeof(path)) {
-            fprintf(stderr, "Errore: path troppo lungo per il file output\n");
-            freeImage(tmp);
-            freeImage(out);
-            return -1;
+
+        // Base
+        snprintf(path, sizeof(path), "%s/%s_base.pbm", outputDir, ops[i].name);
+        if (ops[i].base(image, se, out, tmp) == 0) saveImage(path, out);
+
+        // Offset
+        snprintf(path, sizeof(path), "%s/%s_offset.pbm", outputDir, ops[i].name);
+        if (ops[i].offset(image, seOff, out, tmp) == 0) saveImage(path, out);
+
+        // Separable
+        snprintf(path, sizeof(path), "%s/%s_separable.pbm", outputDir, ops[i].name);
+        if (ops[i].separable(image, seSize, seSize, out, tmp) == 0) saveImage(path, out);
+
+        // Byte
+        if (byteImage && outByte && tmpByte) {
+            snprintf(path, sizeof(path), "%s/%s_byte.pbm", outputDir, ops[i].name);
+            if (ops[i].byteOffset(byteImage, seOff, outByte, tmpByte) == 0) saveByteImage(path, outByte);
         }
 
-        int rc = ops[i].base(image, se, out, tmp);
-        if (rc != 0) {
-            fprintf(stderr, "Errore: impossibile calcolare l'operazione %s per il salvataggio\n", ops[i].name);
-            freeImage(tmp);
-            freeImage(out);
-            return -1;
+        // Uint64
+        if (uint64Image && outUint64 && tmpUint64) {
+            snprintf(path, sizeof(path), "%s/%s_uint64.pbm", outputDir, ops[i].name);
+            if (ops[i].uint64Offset(uint64Image, seOff, outUint64, tmpUint64) == 0) saveUint64Image(path, outUint64);
         }
 
-        if (saveImage(path, out) != 0) {
-            fprintf(stderr, "Errore: impossibile salvare il file %s\n", path);
-            freeImage(tmp);
-            freeImage(out);
-            return -1;
+        // Cuda Offset
+        snprintf(path, sizeof(path), "%s/%s_cuda_offset.pbm", outputDir, ops[i].name);
+        if (ops[i].parallelOffset(image, seOff, out, tmp) == 0) saveImage(path, out);
+
+        // Cuda Naive
+        snprintf(path, sizeof(path), "%s/%s_cuda_naive.pbm", outputDir, ops[i].name);
+        if (ops[i].parallelNaive(image, seOff, out, tmp) == 0) saveImage(path, out);
+
+        // Cuda Byte
+        if (byteImage && outByte && tmpByte) {
+            snprintf(path, sizeof(path), "%s/%s_cuda_byte.pbm", outputDir, ops[i].name);
+            if (ops[i].parallelByteOffset(byteImage, seOff, outByte, tmpByte) == 0) saveByteImage(path, outByte);
         }
     }
 
-    freeImage(tmp);
-    freeImage(out);
+    freeImage(tmp); freeImage(out);
+    if (outByte) freeByteImage(outByte); if (tmpByte) freeByteImage(tmpByte);
+    if (outUint64) freeUint64Image(outUint64); if (tmpUint64) freeUint64Image(tmpUint64);
 
     return 0;
 }
@@ -496,10 +539,10 @@ int main(int argc, char* argv[]) {
     }
 
     OperationSpec ops[] = {
-        {"erosion",  erosion,  erosionWithOffsets,  erosionSeparable,  erosionByteImage,  erosionUint64Image,  runParallelErosion, runParallelErosionNaive, parallelNotImplementedByte, parallelNotImplementedUint64, "erosion.pbm"},
-        {"dilation", dilation, dilationWithOffsets, dilationSeparable, dilationByteImage, dilationUint64Image, runParallelDilation, runParallelDilationNaive, parallelNotImplementedByte, parallelNotImplementedUint64, "dilation.pbm"},
-        {"opening",  opening,  openingWithOffsets,  openingSeparable,  openingByteImage,  openingUint64Image,  runParallelOpening, runParallelOpeningNaive, parallelNotImplementedByte, parallelNotImplementedUint64, "opening.pbm"},
-        {"closing",  closing,  closingWithOffsets,  closingSeparable,  closingByteImage,  closingUint64Image,  runParallelClosing, runParallelClosingNaive, parallelNotImplementedByte, parallelNotImplementedUint64, "closing.pbm"}
+        {"erosion",  erosion,  erosionWithOffsets,  erosionSeparable,  erosionByteImage,  erosionUint64Image,  runParallelErosion, runParallelErosionNaive, runParallelErosionByteImage, parallelNotImplementedUint64, "erosion.pbm"},
+        {"dilation", dilation, dilationWithOffsets, dilationSeparable, dilationByteImage, dilationUint64Image, runParallelDilation, runParallelDilationNaive, runParallelDilationByteImage, parallelNotImplementedUint64, "dilation.pbm"},
+        {"opening",  opening,  openingWithOffsets,  openingSeparable,  openingByteImage,  openingUint64Image,  runParallelOpening, runParallelOpeningNaive, runParallelOpeningByteImage, parallelNotImplementedUint64, "opening.pbm"},
+        {"closing",  closing,  closingWithOffsets,  closingSeparable,  closingByteImage,  closingUint64Image,  runParallelClosing, runParallelClosingNaive, runParallelClosingByteImage, parallelNotImplementedUint64, "closing.pbm"}
     };
     int numOps = (int)(sizeof(ops) / sizeof(ops[0]));
 
@@ -654,7 +697,7 @@ int main(int argc, char* argv[]) {
                     inputPath);
 
                 if (shape == SE_SHAPE_BOX) {
-                    printf("%s -> base: %.3f ms | offset: %.3f ms | separabile: %s ms | byte: %s ms | uint64: %s ms | cuda_offset: %s ms | cuda_naive: %s ms\n",
+                    printf("%s -> base: %.3f ms | offset: %.3f ms | separabile: %s ms | byte: %s ms | uint64: %s ms | cuda_offset: %s ms | cuda_naive: %s ms | cuda_byte: %s ms\n",
                         ops[i].name,
                         baseMs,
                         offsetMs,
@@ -662,16 +705,18 @@ int main(int argc, char* argv[]) {
                         byteMsField,
                         uint64MsField,
                         parallelOffsetMsField,
-                        parallelNaiveMsField);
+                        parallelNaiveMsField,
+                        parallelByteMsField);
                 } else {
-                    printf("%s -> base: %.3f ms | offset: %.3f ms | separabile: NA | byte: %s ms | uint64: %s ms | cuda_offset: %s ms | cuda_naive: %s ms\n",
+                    printf("%s -> base: %.3f ms | offset: %.3f ms | separabile: NA | byte: %s ms | uint64: %s ms | cuda_offset: %s ms | cuda_naive: %s ms | cuda_byte: %s ms\n",
                         ops[i].name,
                         baseMs,
                         offsetMs,
                         byteMsField,
                         uint64MsField,
                         parallelOffsetMsField,
-                        parallelNaiveMsField);
+                        parallelNaiveMsField,
+                        parallelByteMsField);
                 }
             }
 
@@ -683,17 +728,21 @@ int main(int argc, char* argv[]) {
     fclose(csv);
 
     StructuringElement* imageSe = createBoxSE(imageSaveSeSize);
-    if (!imageSe) {
+    StructuringElementWithOffsets* imageSeOff = createBoxSEWithOffsets(imageSaveSeSize);
+    if (!imageSe || !imageSeOff) {
         fprintf(stderr, "Errore durante la creazione dell'SE per il salvataggio immagini\n");
+        if (imageSe) freeSE(imageSe);
+        if (imageSeOff) freeSEWithOffsets(imageSeOff);
         freeUint64Image(uint64Image);
         freeByteImage(byteImage);
         freeImage(image);
         return 1;
     }
 
-    if (saveOperationImages(image, imageSe, outputDir, ops, numOps) != 0) {
+    if (saveOperationImages(image, imageSe, imageSeOff, byteImage, uint64Image, outputDir, ops, numOps, imageSaveSeSize) != 0) {
         fprintf(stderr, "Errore durante il salvataggio delle immagini di output\n");
         freeSE(imageSe);
+        freeSEWithOffsets(imageSeOff);
         freeUint64Image(uint64Image);
         freeByteImage(byteImage);
         freeImage(image);
@@ -701,9 +750,10 @@ int main(int argc, char* argv[]) {
     }
 
     freeSE(imageSe);
+    freeSEWithOffsets(imageSeOff);
 
     printf("CSV salvato in: %s\n", csvPath);
-    printf("Immagini salvate in: %s/{erosion,dilation,opening,closing}.pbm\n", outputDir);
+    printf("Immagini test per correttezza salvate in: %s/\n", outputDir);
 
     freeUint64Image(uint64Image);
     freeByteImage(byteImage);
