@@ -273,19 +273,8 @@ int erosionSeparable(Image* image, int hSize, int vSize, Image* output, Image* t
     int w = image->width;
 
     // --- Passo 1: erosione orizzontale ---
-    unsigned char* temp = NULL;
-    int locallyAllocated = 0;
-    if (tempOut != NULL && tempOut->data != NULL) {
-        temp = tempOut->data;
-        memset(temp, 0, (size_t)w * (size_t)h * sizeof(unsigned char));
-    } else {
-        temp = (unsigned char*)calloc(w * h, sizeof(unsigned char));
-        locallyAllocated = 1;
-    }
-    if (!temp) {
-        fprintf(stderr, "Errore: impossibile allocare memoria per il buffer temporaneo\n");
-        return -1;
-    }
+    unsigned char* temp = tempOut->data;
+    memset(temp, 0, (size_t)w * (size_t)h * sizeof(unsigned char));
 
     int hLeft = hSize / 2;
     int hRight = hSize - hLeft - 1;
@@ -303,12 +292,6 @@ int erosionSeparable(Image* image, int hSize, int vSize, Image* output, Image* t
             if (match)
                 temp[base] = 1;
         }
-    }
-
-    if (output == NULL || output->data == NULL) {
-        fprintf(stderr, "Errore: output non valido\n");
-        free(temp);
-        return -1;
     }
     unsigned char* dataEroded = output->data;
     memset(dataEroded, 0, (size_t)w * (size_t)h * sizeof(unsigned char));
@@ -331,10 +314,6 @@ int erosionSeparable(Image* image, int hSize, int vSize, Image* output, Image* t
         }
     }
 
-    if (locallyAllocated) {
-        free(temp);
-    }
-
     return 0;
 } // erosionSeparable
 
@@ -346,19 +325,8 @@ int dilationSeparable(Image* image, int hSize, int vSize, Image* output, Image* 
     int w = image->width;
 
     // --- Passo 1: dilatazione orizzontale ---
-    unsigned char* temp = NULL;
-    int locallyAllocated = 0;
-    if (tempOut != NULL && tempOut->data != NULL) {
-        temp = tempOut->data;
-        memset(temp, 0, (size_t)w * (size_t)h * sizeof(unsigned char));
-    } else {
-        temp = (unsigned char*)calloc(w * h, sizeof(unsigned char));
-        locallyAllocated = 1;
-    }
-    if (!temp) {
-        fprintf(stderr, "Errore: impossibile allocare memoria per il buffer temporaneo\n");
-        return -1;
-    }
+    unsigned char* temp = tempOut->data;
+    memset(temp, 0, (size_t)w * (size_t)h * sizeof(unsigned char));
 
     int hLeft = hSize / 2;
     int hRight = hSize - hLeft - 1;
@@ -378,11 +346,6 @@ int dilationSeparable(Image* image, int hSize, int vSize, Image* output, Image* 
         }
     }
 
-    if (output == NULL || output->data == NULL) {
-        fprintf(stderr, "Errore: output non valido\n");
-        free(temp);
-        return -1;
-    }
     unsigned char* dataDilated = output->data;
     memset(dataDilated, 0, (size_t)w * (size_t)h * sizeof(unsigned char));
 
@@ -401,10 +364,6 @@ int dilationSeparable(Image* image, int hSize, int vSize, Image* output, Image* 
                 }
             }
         }
-    }
-
-    if (locallyAllocated) {
-        free(temp);
     }
 
     return 0;
