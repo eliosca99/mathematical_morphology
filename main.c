@@ -29,11 +29,11 @@ static double timeDiffMs(struct timespec start, struct timespec end) {
 
 static void printUsage(const char* prog) {
     fprintf(stderr, "Uso: %s -i <input.pbm> [-o <output_dir>] [-r <num_runs>] [-s <save_se_size>]\n", prog);
-    fprintf(stderr, "  -i   immagine PBM di input (obbligatorio)\n");
-    fprintf(stderr, "  -o   directory di output (opzionale)\n");
-    fprintf(stderr, "       se omessa, viene creata output_images/output_N\n");
-    fprintf(stderr, "  -r   numero di run per media (default: 10)\n");
-    fprintf(stderr, "  -s   dimensione box SE per salvare le 4 immagini finali (default: 5)\n");
+    fprintf(stderr, "  -i      immagine PBM di input (obbligatorio)\n");
+    fprintf(stderr, "  -o      directory di output (opzionale)\n");
+    fprintf(stderr, "          se omessa, viene creata output_images/output_N\n");
+    fprintf(stderr, "  -r      numero di run per media (default: 10)\n");
+    fprintf(stderr, "  -s      dimensione box SE per salvare le 4 immagini finali (default: 5)\n");
 }
 
 static int ensureDirectory(const char* path) {
@@ -375,79 +375,83 @@ static int parallelNotImplementedUint64(Uint64Image* image, StructuringElementWi
 
 #include "parallel/morpho_cuda.h"
 
+static int global_block_dim_x = 32;
+static int global_block_dim_y = 32;
+static int global_block_dim_uint64_x = 32;
+static int global_block_dim_uint64_y = 8;
+
 static int runParallelErosion(Image* image, StructuringElementWithOffsets* se, Image* output, Image* temp) {
     (void)temp;
-    return erosionCuda(image, se, output, 32, 32);
+    return erosionCuda(image, se, output, global_block_dim_x, global_block_dim_y);
 }
 static int runParallelDilation(Image* image, StructuringElementWithOffsets* se, Image* output, Image* temp) {
     (void)temp;
-    return dilationCuda(image, se, output, 32, 32);
+    return dilationCuda(image, se, output, global_block_dim_x, global_block_dim_y);
 }
 static int runParallelOpening(Image* image, StructuringElementWithOffsets* se, Image* output, Image* temp) {
     (void)temp;
-    return openingCuda(image, se, output, 32, 32);
+    return openingCuda(image, se, output, global_block_dim_x, global_block_dim_y);
 }
 static int runParallelClosing(Image* image, StructuringElementWithOffsets* se, Image* output, Image* temp) {
     (void)temp;
-    return closingCuda(image, se, output, 32, 32);
+    return closingCuda(image, se, output, global_block_dim_x, global_block_dim_y);
 }
 
 static int runParallelErosionNaive(Image* image, StructuringElementWithOffsets* se, Image* output, Image* temp) {
     (void)temp;
-    return erosionNaive(image, se, output, 32, 32);
+    return erosionNaive(image, se, output, global_block_dim_x, global_block_dim_y);
 }
 static int runParallelDilationNaive(Image* image, StructuringElementWithOffsets* se, Image* output, Image* temp) {
     (void)temp;
-    return dilationNaive(image, se, output, 32, 32);
+    return dilationNaive(image, se, output, global_block_dim_x, global_block_dim_y);
 }
 static int runParallelOpeningNaive(Image* image, StructuringElementWithOffsets* se, Image* output, Image* temp) {
     (void)temp;
-    return openingNaive(image, se, output, 32, 32);
+    return openingNaive(image, se, output, global_block_dim_x, global_block_dim_y);
 }
 static int runParallelClosingNaive(Image* image, StructuringElementWithOffsets* se, Image* output, Image* temp) {
     (void)temp;
-    return closingNaive(image, se, output, 32, 32);
+    return closingNaive(image, se, output, global_block_dim_x, global_block_dim_y);
 }
 
 static int runParallelErosionByteImage(ByteImage* image, StructuringElementWithOffsets* se, ByteImage* output, ByteImage* temp) {
     (void)temp;
-    return erosionByteImageCuda(image, se, output, 32, 32);
+    return erosionByteImageCuda(image, se, output, global_block_dim_x, global_block_dim_y);
 }
 
 static int runParallelDilationByteImage(ByteImage* image, StructuringElementWithOffsets* se, ByteImage* output, ByteImage* temp) {
     (void)temp;
-    return dilationByteImageCuda(image, se, output, 32, 32);
+    return dilationByteImageCuda(image, se, output, global_block_dim_x, global_block_dim_y);
 }
 
 static int runParallelOpeningByteImage(ByteImage* image, StructuringElementWithOffsets* se, ByteImage* output, ByteImage* temp) {
     (void)temp;
-    return openingByteImageCuda(image, se, output, 32, 32);
+    return openingByteImageCuda(image, se, output, global_block_dim_x, global_block_dim_y);
 }
 
 static int runParallelClosingByteImage(ByteImage* image, StructuringElementWithOffsets* se, ByteImage* output, ByteImage* temp) {
     (void)temp;
-    return closingByteImageCuda(image, se, output, 32, 32);
+    return closingByteImageCuda(image, se, output, global_block_dim_x, global_block_dim_y);
 }
 
 static int runParallelErosionUint64Image(Uint64Image* image, StructuringElementWithOffsets* se, Uint64Image* output, Uint64Image* temp) {
     (void)temp;
-    // Uso blocchi 32x8 o simili. 32x2 era per un rapido check
-    return erosionUint64ImageCuda(image, se, output, 32, 8);
+    return erosionUint64ImageCuda(image, se, output, global_block_dim_uint64_x, global_block_dim_uint64_y);
 }
 
 static int runParallelDilationUint64Image(Uint64Image* image, StructuringElementWithOffsets* se, Uint64Image* output, Uint64Image* temp) {
     (void)temp;
-    return dilationUint64ImageCuda(image, se, output, 32, 8);
+    return dilationUint64ImageCuda(image, se, output, global_block_dim_uint64_x, global_block_dim_uint64_y);
 }
 
 static int runParallelOpeningUint64Image(Uint64Image* image, StructuringElementWithOffsets* se, Uint64Image* output, Uint64Image* temp) {
     (void)temp;
-    return openingUint64ImageCuda(image, se, output, 32, 8);
+    return openingUint64ImageCuda(image, se, output, global_block_dim_uint64_x, global_block_dim_uint64_y);
 }
 
 static int runParallelClosingUint64Image(Uint64Image* image, StructuringElementWithOffsets* se, Uint64Image* output, Uint64Image* temp) {
     (void)temp;
-    return closingUint64ImageCuda(image, se, output, 32, 8);
+    return closingUint64ImageCuda(image, se, output, global_block_dim_uint64_x, global_block_dim_uint64_y);
 }
 
 static int saveOperationImages(Image* image, StructuringElement* se, StructuringElementWithOffsets* seOff, ByteImage* byteImage, Uint64Image* uint64Image, const char* outputDir, const OperationSpec* ops, int numOps, int seSize) {
@@ -624,12 +628,26 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
-    fprintf(csv, "se_shape,se_size,se_radius,operation,base_ms,offset_ms,separable_ms,byte_ms,uint64_ms,parallel_offset_ms,parallel_naive_ms,parallel_byte_ms,parallel_uint64_ms,speedup_offset,speedup_separable,speedup_byte,speedup_uint64,speedup_parallel_offset,speedup_parallel_naive,speedup_parallel_byte,speedup_parallel_uint64,runs,input\n");
+    fprintf(csv, "se_shape,se_size,se_radius,operation,bx,by,b64x,b64y,base_ms,offset_ms,separable_ms,byte_ms,uint64_ms,parallel_offset_ms,parallel_naive_ms,parallel_byte_ms,parallel_uint64_ms,speedup_offset,speedup_separable,speedup_byte,speedup_uint64,speedup_parallel_offset,speedup_parallel_naive,speedup_parallel_byte,speedup_parallel_uint64,runs,input\n");
 
     printf("Input: %s (%dx%d)\n", inputPath, image->width, image->height);
     printf("Run mediati: %d\n", numRuns);
     printf("SE per immagini finali: %d\n", imageSaveSeSize);
     printf("Output dir: %s\n", outputDir);
+
+    typedef struct {
+        int bx, by;
+        int b64x, b64y;
+    } BlockConfig;
+
+    BlockConfig blockConfigs[] = {
+        {8, 8, 32, 4},
+        {16, 16, 32, 8},
+        {32, 8, 64, 4},
+        {32, 16, 64, 8},
+        {32, 32, 64, 8}
+    };
+    int numBlockConfigs = (int)(sizeof(blockConfigs) / sizeof(blockConfigs[0]));
 
     for (int shapeIdx = 0; shapeIdx < 2; shapeIdx++) {
         SeShape shape = (shapeIdx == 0) ? SE_SHAPE_BOX : SE_SHAPE_DISK;
@@ -676,10 +694,6 @@ int main(int argc, char* argv[]) {
                 }
                 double byteMs = benchmarkByteOffset(byteImage, seOff, ops[i].byteOffset, numRuns);
                 double uint64Ms = benchmarkUint64Offset(uint64Image, seOff, ops[i].uint64Offset, numRuns);
-                double parallelOffsetMs = benchmarkOffset(image, seOff, ops[i].parallelOffset, numRuns);
-                double parallelNaiveMs = benchmarkOffset(image, seOff, ops[i].parallelNaive, numRuns);
-                double parallelByteMs = benchmarkByteOffset(byteImage, seOff, ops[i].parallelByteOffset, numRuns);
-                double parallelUint64Ms = benchmarkUint64Offset(uint64Image, seOff, ops[i].parallelUint64Offset, numRuns);
 
                 if (baseMs < 0 || offsetMs < 0 || (shape == SE_SHAPE_BOX && separableMs < 0)) {
                     fprintf(stderr, "Errore: benchmark fallito per %s (%s, size=%d)\n", ops[i].name, shapeName, seSize);
@@ -692,72 +706,64 @@ int main(int argc, char* argv[]) {
                     return 1;
                 }
 
-                double speedupOffset = baseMs / offsetMs;
-                double speedupSeparable = (separableMs > 0.0) ? (baseMs / separableMs) : -1.0;
-                double speedupByte = (byteMs > 0.0) ? (baseMs / byteMs) : -1.0;
-                double speedupUint64 = (uint64Ms > 0.0) ? (baseMs / uint64Ms) : -1.0;
-                double speedupParallelOffset = (parallelOffsetMs > 0.0) ? (baseMs / parallelOffsetMs) : -1.0;
-                double speedupParallelNaive = (parallelNaiveMs > 0.0) ? (baseMs / parallelNaiveMs) : -1.0;
-                double speedupParallelByte = (parallelByteMs > 0.0) ? (baseMs / parallelByteMs) : -1.0;
-                double speedupParallelUint64 = (parallelUint64Ms > 0.0) ? (baseMs / parallelUint64Ms) : -1.0;
+                for (int c = 0; c < numBlockConfigs; c++) {
+                    global_block_dim_x = blockConfigs[c].bx;
+                    global_block_dim_y = blockConfigs[c].by;
+                    global_block_dim_uint64_x = blockConfigs[c].b64x;
+                    global_block_dim_uint64_y = blockConfigs[c].b64y;
 
-                char separableMsField[32];
-                char speedupSeparableField[32];
-                char byteMsField[32];
-                char speedupByteField[32];
-                char uint64MsField[32];
-                char speedupUint64Field[32];
-                char parallelOffsetMsField[32];
-                char parallelNaiveMsField[32];
-                char parallelByteMsField[32];
-                char parallelUint64MsField[32];
-                char speedupParallelOffsetField[32];
-                char speedupParallelNaiveField[32];
-                char speedupParallelByteField[32];
-                char speedupParallelUint64Field[32];
-                formatMetric(separableMs, separableMsField, sizeof(separableMsField));
-                formatMetric(speedupSeparable, speedupSeparableField, sizeof(speedupSeparableField));
-                formatMetric(byteMs, byteMsField, sizeof(byteMsField));
-                formatMetric(speedupByte, speedupByteField, sizeof(speedupByteField));
-                formatMetric(uint64Ms, uint64MsField, sizeof(uint64MsField));
-                formatMetric(speedupUint64, speedupUint64Field, sizeof(speedupUint64Field));
-                formatMetric(parallelOffsetMs, parallelOffsetMsField, sizeof(parallelOffsetMsField));
-                formatMetric(parallelNaiveMs, parallelNaiveMsField, sizeof(parallelNaiveMsField));
-                formatMetric(parallelByteMs, parallelByteMsField, sizeof(parallelByteMsField));
-                formatMetric(parallelUint64Ms, parallelUint64MsField, sizeof(parallelUint64MsField));
-                formatMetric(speedupParallelOffset, speedupParallelOffsetField, sizeof(speedupParallelOffsetField));
-                formatMetric(speedupParallelNaive, speedupParallelNaiveField, sizeof(speedupParallelNaiveField));
-                formatMetric(speedupParallelByte, speedupParallelByteField, sizeof(speedupParallelByteField));
-                formatMetric(speedupParallelUint64, speedupParallelUint64Field, sizeof(speedupParallelUint64Field));
+                    double parallelOffsetMs = benchmarkOffset(image, seOff, ops[i].parallelOffset, numRuns);
+                    double parallelNaiveMs = benchmarkOffset(image, seOff, ops[i].parallelNaive, numRuns);
+                    double parallelByteMs = benchmarkByteOffset(byteImage, seOff, ops[i].parallelByteOffset, numRuns);
+                    double parallelUint64Ms = benchmarkUint64Offset(uint64Image, seOff, ops[i].parallelUint64Offset, numRuns);
 
-                fprintf(csv, "%s,%d,%d,%s,%.6f,%.6f,%s,%s,%s,%s,%s,%s,%s,%.6f,%s,%s,%s,%s,%s,%s,%s,%d,%s\n",
-                    shapeName,
-                    seSize,
-                    seRadius,
-                    ops[i].name,
-                    baseMs,
-                    offsetMs,
-                    separableMsField,
-                    byteMsField,
-                    uint64MsField,
-                    parallelOffsetMsField,
-                    parallelNaiveMsField,
-                    parallelByteMsField,
-                    parallelUint64MsField,
-                    speedupOffset,
-                    speedupSeparableField,
-                    speedupByteField,
-                    speedupUint64Field,
-                    speedupParallelOffsetField,
-                    speedupParallelNaiveField,
-                    speedupParallelByteField,
-                    speedupParallelUint64Field,
-                    numRuns,
-                    inputPath);
+                    double speedupOffset = baseMs / offsetMs;
+                    double speedupSeparable = (separableMs > 0.0) ? (baseMs / separableMs) : -1.0;
+                    double speedupByte = (byteMs > 0.0) ? (baseMs / byteMs) : -1.0;
+                    double speedupUint64 = (uint64Ms > 0.0) ? (baseMs / uint64Ms) : -1.0;
+                    double speedupParallelOffset = (parallelOffsetMs > 0.0) ? (baseMs / parallelOffsetMs) : -1.0;
+                    double speedupParallelNaive = (parallelNaiveMs > 0.0) ? (baseMs / parallelNaiveMs) : -1.0;
+                    double speedupParallelByte = (parallelByteMs > 0.0) ? (baseMs / parallelByteMs) : -1.0;
+                    double speedupParallelUint64 = (parallelUint64Ms > 0.0) ? (baseMs / parallelUint64Ms) : -1.0;
 
-                if (shape == SE_SHAPE_BOX) {
-                    printf("%s -> base: %.3f ms | offset: %.3f ms | separabile: %s ms | byte: %s ms | uint64: %s ms | cuda_offset: %s ms | cuda_naive: %s ms | cuda_byte: %s ms | cuda_uint64: %s ms\n",
+                    char separableMsField[32];
+                    char speedupSeparableField[32];
+                    char byteMsField[32];
+                    char speedupByteField[32];
+                    char uint64MsField[32];
+                    char speedupUint64Field[32];
+                    char parallelOffsetMsField[32];
+                    char parallelNaiveMsField[32];
+                    char parallelByteMsField[32];
+                    char parallelUint64MsField[32];
+                    char speedupParallelOffsetField[32];
+                    char speedupParallelNaiveField[32];
+                    char speedupParallelByteField[32];
+                    char speedupParallelUint64Field[32];
+                    formatMetric(separableMs, separableMsField, sizeof(separableMsField));
+                    formatMetric(speedupSeparable, speedupSeparableField, sizeof(speedupSeparableField));
+                    formatMetric(byteMs, byteMsField, sizeof(byteMsField));
+                    formatMetric(speedupByte, speedupByteField, sizeof(speedupByteField));
+                    formatMetric(uint64Ms, uint64MsField, sizeof(uint64MsField));
+                    formatMetric(speedupUint64, speedupUint64Field, sizeof(speedupUint64Field));
+                    formatMetric(parallelOffsetMs, parallelOffsetMsField, sizeof(parallelOffsetMsField));
+                    formatMetric(parallelNaiveMs, parallelNaiveMsField, sizeof(parallelNaiveMsField));
+                    formatMetric(parallelByteMs, parallelByteMsField, sizeof(parallelByteMsField));
+                    formatMetric(parallelUint64Ms, parallelUint64MsField, sizeof(parallelUint64MsField));
+                    formatMetric(speedupParallelOffset, speedupParallelOffsetField, sizeof(speedupParallelOffsetField));
+                    formatMetric(speedupParallelNaive, speedupParallelNaiveField, sizeof(speedupParallelNaiveField));
+                    formatMetric(speedupParallelByte, speedupParallelByteField, sizeof(speedupParallelByteField));
+                    formatMetric(speedupParallelUint64, speedupParallelUint64Field, sizeof(speedupParallelUint64Field));
+
+                    fprintf(csv, "%s,%d,%d,%s,%d,%d,%d,%d,%.6f,%.6f,%s,%s,%s,%s,%s,%s,%s,%.6f,%s,%s,%s,%s,%s,%s,%s,%d,%s\n",
+                        shapeName,
+                        seSize,
+                        seRadius,
                         ops[i].name,
+                        global_block_dim_x,
+                        global_block_dim_y,
+                        global_block_dim_uint64_x,
+                        global_block_dim_uint64_y,
                         baseMs,
                         offsetMs,
                         separableMsField,
@@ -766,18 +772,45 @@ int main(int argc, char* argv[]) {
                         parallelOffsetMsField,
                         parallelNaiveMsField,
                         parallelByteMsField,
-                        parallelUint64MsField);
-                } else {
-                    printf("%s -> base: %.3f ms | offset: %.3f ms | separabile: NA | byte: %s ms | uint64: %s ms | cuda_offset: %s ms | cuda_naive: %s ms | cuda_byte: %s ms | cuda_uint64: %s ms\n",
-                        ops[i].name,
-                        baseMs,
-                        offsetMs,
-                        byteMsField,
-                        uint64MsField,
-                        parallelOffsetMsField,
-                        parallelNaiveMsField,
-                        parallelByteMsField,
-                        parallelUint64MsField);
+                        parallelUint64MsField,
+                        speedupOffset,
+                        speedupSeparableField,
+                        speedupByteField,
+                        speedupUint64Field,
+                        speedupParallelOffsetField,
+                        speedupParallelNaiveField,
+                        speedupParallelByteField,
+                        speedupParallelUint64Field,
+                        numRuns,
+                        inputPath);
+
+                    if (shape == SE_SHAPE_BOX) {
+                        // Stampiamo a schermo tutti i block configs, non solo l'ultimo
+                        printf("%s (blocks %dx%d/%dx%d) -> base: %.3f ms | offset: %.3f ms | separabile: %s ms | byte: %s ms | uint64: %s ms | cuda_offset: %s ms | cuda_naive: %s ms | cuda_byte: %s ms | cuda_uint64: %s ms\n",
+                            ops[i].name,
+                            global_block_dim_x, global_block_dim_y, global_block_dim_uint64_x, global_block_dim_uint64_y,
+                            baseMs,
+                            offsetMs,
+                            separableMsField,
+                            byteMsField,
+                            uint64MsField,
+                            parallelOffsetMsField,
+                            parallelNaiveMsField,
+                            parallelByteMsField,
+                            parallelUint64MsField);
+                    } else {
+                        printf("%s (blocks %dx%d/%dx%d) -> base: %.3f ms | offset: %.3f ms | separabile: NA | byte: %s ms | uint64: %s ms | cuda_offset: %s ms | cuda_naive: %s ms | cuda_byte: %s ms | cuda_uint64: %s ms\n",
+                            ops[i].name,
+                            global_block_dim_x, global_block_dim_y, global_block_dim_uint64_x, global_block_dim_uint64_y,
+                            baseMs,
+                            offsetMs,
+                            byteMsField,
+                            uint64MsField,
+                            parallelOffsetMsField,
+                            parallelNaiveMsField,
+                            parallelByteMsField,
+                            parallelUint64MsField);
+                    }
                 }
             }
 
